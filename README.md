@@ -1,2 +1,4 @@
-# piqc
-ParallelIQ builds predictive orchestration and compiler automation for AI infrastructure — turning ModelSpec into deployable, optimized pipelines.
+# ParallelIQ
+🚀 Predictive Orchestration and AI Infrastructure Automation
+This organization houses public-facing resources for ParallelIQ and PIQC.
+Learn more at [paralleliq.ai](https://paralleliq.ai)
