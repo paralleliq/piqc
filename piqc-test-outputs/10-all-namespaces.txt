@@ -1,0 +1,30 @@
+ModelSpec Introspector v1.0.0
+========================================
+
+[INFO] Connecting to cluster...
+       Context: gke_piqc-483417_us-central1-a_piqc-test
+       Cluster: gke_piqc-483417_us-central1-a_piqc-test
+
+[INFO] Scanning namespaces...
+       Discovered: 10 namespace(s)
+
+[INFO] Detecting inference workloads...
+       Pods analyzed: 18
+       Inference deployments found: 3
+
+Framework Distribution:
+  - unknown     :   2 deployment(s) (67%)
+  - vllm        :   1 deployment(s) (33%)
+
+
+                               Discovered Inference Deployments                                
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┓
+┃ Model Name                ┃ Engine  ┃ GPU Type   ┃ Replicas ┃ GPU Util ┃ Namespace          ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
+│ dcgm-exporter-r24z8       │ unknown │ N/A        │        1 │      N/A │ gke-managed-system │
+│ TinyLlama/TinyLlama-1.... │ vllm    │ 1xTesla T4 │        1 │      N/A │ inference          │
+│ nvidia-gpu-device-plug... │ unknown │ N/A        │        1 │      N/A │ kube-system        │
+└───────────────────────────┴─────────┴────────────┴──────────┴──────────┴────────────────────┘
+
+
+[INFO] Scan completed in 7.21s

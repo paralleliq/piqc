@@ -1,0 +1,36 @@
+=== Generated Test Outputs ===
+
+/home/ammarkhan2264388/piqc-test-outputs/00-summary.txt
+/home/ammarkhan2264388/piqc-test-outputs/01-connection-test.txt
+/home/ammarkhan2264388/piqc-test-outputs/02-table-output.txt
+/home/ammarkhan2264388/piqc-test-outputs/03-yaml-output/inference_vllm-tinyllama.yaml
+/home/ammarkhan2264388/piqc-test-outputs/04-json-output/inference_vllm-tinyllama.json
+/home/ammarkhan2264388/piqc-test-outputs/05-FINAL-TEST/inference_vllm-tinyllama.yaml
+/home/ammarkhan2264388/piqc-test-outputs/05-runtime-metrics/inference_vllm-tinyllama.yaml
+/home/ammarkhan2264388/piqc-test-outputs/06-piqc-facts/inference_vllm-tinyllama.yaml
+/home/ammarkhan2264388/piqc-test-outputs/06-piqc-facts/piqc-facts.json
+/home/ammarkhan2264388/piqc-test-outputs/07-verbose.txt
+/home/ammarkhan2264388/piqc-test-outputs/08-debug.txt
+/home/ammarkhan2264388/piqc-test-outputs/09-no-exec/inference_vllm-tinyllama.yaml
+/home/ammarkhan2264388/piqc-test-outputs/10-all-namespaces.txt
+/home/ammarkhan2264388/piqc-test-outputs/11-combined/modelspecs.yaml
+/home/ammarkhan2264388/piqc-test-outputs/12-full-scan/inference_vllm-tinyllama.yaml
+/home/ammarkhan2264388/piqc-test-outputs/13-version.txt
+
+=== Disk Usage ===
+4.0K	/home/ammarkhan2264388/piqc-test-outputs/00-summary.txt
+4.0K	/home/ammarkhan2264388/piqc-test-outputs/01-connection-test.txt
+4.0K	/home/ammarkhan2264388/piqc-test-outputs/02-table-output.txt
+8.0K	/home/ammarkhan2264388/piqc-test-outputs/03-yaml-output
+8.0K	/home/ammarkhan2264388/piqc-test-outputs/04-json-output
+8.0K	/home/ammarkhan2264388/piqc-test-outputs/05-FINAL-TEST
+8.0K	/home/ammarkhan2264388/piqc-test-outputs/05-runtime-metrics
+16K	/home/ammarkhan2264388/piqc-test-outputs/06-piqc-facts
+4.0K	/home/ammarkhan2264388/piqc-test-outputs/07-verbose.txt
+4.0K	/home/ammarkhan2264388/piqc-test-outputs/08-debug.txt
+8.0K	/home/ammarkhan2264388/piqc-test-outputs/09-no-exec
+4.0K	/home/ammarkhan2264388/piqc-test-outputs/10-all-namespaces.txt
+8.0K	/home/ammarkhan2264388/piqc-test-outputs/11-combined
+8.0K	/home/ammarkhan2264388/piqc-test-outputs/12-full-scan
+4.0K	/home/ammarkhan2264388/piqc-test-outputs/12-full-scan.log
+4.0K	/home/ammarkhan2264388/piqc-test-outputs/13-version.txt

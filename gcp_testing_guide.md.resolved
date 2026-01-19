@@ -1,0 +1,853 @@
+# 🚀 Complete GCP Testing Guide for PIQC Tool
+
+> **Estimated Cost: $2-5 for complete testing**  
+> **Time Required: ~30-45 minutes**
+
+---
+
+## 📖 What You Need to Know First
+
+### What is GCP?
+**Google Cloud Platform (GCP)** is like renting computers from Google. Instead of buying expensive hardware, you pay per hour to use Google's computers.
+
+### What is Kubernetes (K8s)?
+**Kubernetes** is a system that manages containers (lightweight apps) across multiple computers. Think of it as an orchestra conductor that tells each musician (container) what to do.
+
+### What is GKE?
+**Google Kubernetes Engine (GKE)** is Google's managed Kubernetes service. Google handles the complex setup; you just use it.
+
+### What is a GPU?
+A **GPU** (Graphics Processing Unit) is a special chip that AI models need to run fast. We'll use NVIDIA T4 GPU - the cheapest option.
+
+### What is vLLM?
+**vLLM** is software that runs AI language models efficiently. Our tool (PIQC) finds and documents vLLM deployments.
+
+---
+
+## 🛡️ Prerequisites Checklist
+
+Before starting, make sure you have:
+
+- [ ] GCP account with billing enabled (client should have provided access)
+- [ ] A modern web browser (Chrome recommended)
+- [ ] ~30 minutes of uninterrupted time
+
+---
+
+## 📋 Step-by-Step Guide
+
+### PHASE 1: Access Google Cloud Console
+
+#### Step 1.1: Open Google Cloud Console
+1. Go to: **https://console.cloud.google.com**
+2. Sign in with the account that has GCP access
+3. You should see the Google Cloud Console dashboard
+
+#### Step 1.2: Open Cloud Shell
+Cloud Shell is a free terminal (command-line) in your browser - no installation needed!
+
+1. Look at the **top-right corner** of the page
+2. Click the icon that looks like `>_` (terminal icon)
+3. A black terminal window will open at the bottom
+4. Wait for it to say "Welcome to Cloud Shell!"
+
+> 💡 **Tip**: Click the "Open in new window" button to make it full screen
+
+---
+
+### PHASE 2: Set Up Your Project
+
+#### Step 2.1: Check Your Project
+Copy and paste this command into Cloud Shell and press Enter:
+
+```bash
+gcloud config get-value project
+```
+
+This shows your current project ID. If it shows the wrong project, the client needs to tell you the correct project ID.
+
+#### Step 2.2: Set the Correct Project (if needed)
+Replace `YOUR_PROJECT_ID` with the actual project ID:
+
+```bash
+gcloud config set project YOUR_PROJECT_ID
+```
+
+#### Step 2.3: Enable Required Services
+These commands turn on the features we need. Run each one:
+
+```bash
+# Enable Kubernetes Engine API
+gcloud services enable container.googleapis.com
+
+# Enable Compute Engine API  
+gcloud services enable compute.googleapis.com
+```
+
+> ⏱️ **Wait**: This may take 1-2 minutes
+
+---
+
+### PHASE 3: Create the Kubernetes Cluster (THE EXPENSIVE PART)
+
+> ⚠️ **IMPORTANT**: This step starts billing! We use "Spot" instances which are 60-70% cheaper but can be interrupted.
+
+#### Step 3.1: Create the Cluster
+Copy and paste this entire command (it's one command):
+
+```bash
+gcloud container clusters create piqc-test \
+  --zone=us-central1-a \
+  --machine-type=n1-standard-4 \
+  --accelerator=type=nvidia-tesla-t4,count=1 \
+  --num-nodes=1 \
+  --spot \
+  --disk-size=50GB \
+  --enable-autoscaling \
+  --min-nodes=0 \
+  --max-nodes=1
+```
+
+**What this does:**
+- `piqc-test` = name of your cluster
+- `us-central1-a` = location (US Central has good GPU availability)
+- `n1-standard-4` = computer type (4 CPUs, 15GB RAM)
+- `nvidia-tesla-t4` = cheapest GPU (~$0.35/hour with Spot)
+- `--spot` = uses cheaper "Spot" pricing
+
+> ⏱️ **Wait**: This takes **5-10 minutes**. You'll see progress messages.
+
+#### Step 3.2: Install GPU Drivers
+After the cluster is created, run:
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/master/nvidia-driver-installer/cos/daemonset-preloaded.yaml
+```
+
+> ⏱️ **Wait**: Give it 2-3 minutes for drivers to install
+
+#### Step 3.3: Verify GPU is Ready
+Check if the GPU is available:
+
+```bash
+kubectl get nodes -o jsonpath='{.items[*].status.allocatable.nvidia\.com/gpu}'
+```
+
+✅ **Expected output**: `1` (means 1 GPU is ready)
+
+If you see nothing, wait another minute and try again.
+
+---
+
+### PHASE 4: Deploy a Test AI Model (vLLM)
+
+#### Step 4.1: Create a Namespace
+A namespace is like a folder to organize things:
+
+```bash
+kubectl create namespace inference
+```
+
+#### Step 4.2: Create the vLLM Deployment File
+This creates a file with the vLLM configuration:
+
+```bash
+cat << 'EOF' > vllm-tinyllama.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-tinyllama
+  namespace: inference
+  labels:
+    app: vllm-tinyllama
+    app.kubernetes.io/name: vllm
+    framework: vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-tinyllama
+  template:
+    metadata:
+      labels:
+        app: vllm-tinyllama
+        app.kubernetes.io/name: vllm
+        framework: vllm
+    spec:
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:latest
+        args:
+          - "--model"
+          - "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+          - "--served-model-name"
+          - "tinyllama"
+          - "--dtype"
+          - "float16"
+          - "--max-model-len"
+          - "2048"
+          - "--tensor-parallel-size"
+          - "1"
+          - "--gpu-memory-utilization"
+          - "0.9"
+          - "--enable-prefix-caching"
+        ports:
+          - containerPort: 8000
+            name: http
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+            cpu: "2"
+            memory: "8Gi"
+          limits:
+            nvidia.com/gpu: 1
+            cpu: "4"
+            memory: "12Gi"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 180
+          periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-tinyllama
+  namespace: inference
+spec:
+  selector:
+    app: vllm-tinyllama
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+  type: ClusterIP
+EOF
+```
+
+#### Step 4.3: Deploy vLLM
+```bash
+kubectl apply -f vllm-tinyllama.yaml
+```
+
+#### Step 4.4: Watch the Deployment
+Watch the pod status until it says "Running":
+
+```bash
+kubectl get pods -n inference -w
+```
+
+You'll see statuses like:
+- `Pending` → waiting for resources
+- `ContainerCreating` → downloading the AI model
+- `Running` → ready! ✅
+
+> ⏱️ **Wait**: This takes **3-5 minutes** (downloading the model)
+
+Press `Ctrl+C` to stop watching once you see "Running"
+
+#### Step 4.5: Verify vLLM is Working
+Check the logs to see if the model loaded:
+
+```bash
+kubectl logs -n inference -l app=vllm-tinyllama --tail=20
+```
+
+Look for a message like: `"INFO: Uvicorn running on http://0.0.0.0:8000"`
+
+---
+
+### PHASE 5: Upload PIQC Tool to Cloud Shell
+
+#### Step 5.1: Create ZIP File (On Your Windows Laptop)
+
+1. Open **File Explorer**
+2. Navigate to `C:\Users\Administrator\Desktop`
+3. **Right-click** the `ModelSpec` folder
+4. Select **"Send to"** → **"Compressed (zipped) folder"**
+5. This creates `ModelSpec.zip` on your Desktop
+
+#### Step 5.2: Upload ZIP to Cloud Shell
+
+1. In your Cloud Shell window (bottom of GCP Console)
+2. Click the **three dots menu (⋮)** in the top-right corner of Cloud Shell
+3. Click **"Upload"**
+4. Select `ModelSpec.zip` from your Desktop
+5. Wait for upload to complete (you'll see a progress bar)
+
+#### Step 5.3: Extract the ZIP in Cloud Shell
+
+```bash
+cd ~
+unzip ModelSpec.zip
+cd ModelSpec
+ls -la
+```
+
+You should see files like:
+```
+README.md
+pyproject.toml
+poetry.lock
+src/
+tests/
+rbac/
+docs/
+```
+
+#### Step 5.2: Install Python Dependencies
+```bash
+pip install poetry
+poetry install
+```
+
+#### Step 5.3: Apply RBAC Permissions
+RBAC = Role-Based Access Control. This gives PIQC permission to scan the cluster:
+
+```bash
+kubectl apply -f rbac/
+```
+
+---
+
+### PHASE 6: Test All PIQC Commands and Save Outputs! 🎉
+
+First, create an output folder:
+
+```bash
+mkdir -p ~/piqc-test-outputs
+cd ~/ModelSpec
+```
+
+---
+
+#### Test 1: Connection Test
+```bash
+poetry run piqc test-connection | tee ~/piqc-test-outputs/01-connection-test.txt
+```
+✅ **Expected**: Shows "Connection successful" with cluster info
+
+---
+
+#### Test 2: Basic Scan (Table View)
+```bash
+poetry run piqc scan --namespace inference --format table | tee ~/piqc-test-outputs/02-scan-table.txt
+```
+✅ **Expected**: A nice table showing the vllm-tinyllama deployment
+
+---
+
+#### Test 3: YAML Output
+```bash
+poetry run piqc scan --namespace inference --format yaml > ~/piqc-test-outputs/03-modelspec.yaml
+cat ~/piqc-test-outputs/03-modelspec.yaml
+```
+✅ **Expected**: YAML document with all collected information
+
+---
+
+#### Test 4: JSON Output
+```bash
+poetry run piqc scan --namespace inference --format json > ~/piqc-test-outputs/04-modelspec.json
+cat ~/piqc-test-outputs/04-modelspec.json
+```
+✅ **Expected**: JSON format output
+
+---
+
+#### Test 5: Save to Output Directory
+```bash
+poetry run piqc scan --namespace inference --format yaml -o ~/piqc-test-outputs/05-output-dir
+ls -la ~/piqc-test-outputs/05-output-dir/
+```
+✅ **Expected**: Files created in the output directory
+
+---
+
+#### Test 6: Verbose Mode (More Details)
+```bash
+poetry run piqc scan --namespace inference --format table -v 2>&1 | tee ~/piqc-test-outputs/06-verbose.txt
+```
+✅ **Expected**: Extra logging information shown
+
+---
+
+#### Test 7: Debug Mode (Maximum Details)
+```bash
+poetry run piqc scan --namespace inference --format table --debug 2>&1 | tee ~/piqc-test-outputs/07-debug.txt
+```
+✅ **Expected**: Very detailed debug output
+
+---
+
+#### Test 8: GPU Metrics Collection
+```bash
+poetry run piqc scan --namespace inference --format yaml -v 2>&1 | tee ~/piqc-test-outputs/08-gpu-metrics.yaml
+```
+✅ **Expected**: GPU info with utilization, memory, temperature
+
+---
+
+#### Test 9: Runtime Metrics (vLLM API)
+```bash
+poetry run piqc scan --namespace inference --collect-runtime --format yaml > ~/piqc-test-outputs/09-runtime-metrics.yaml
+cat ~/piqc-test-outputs/09-runtime-metrics.yaml
+```
+✅ **Expected**: `runtimeState` section with live metrics
+
+---
+
+#### Test 10: PIQC Facts Bundle
+```bash
+poetry run piqc scan --namespace inference --output-piqc -o ~/piqc-test-outputs/10-piqc-facts
+cat ~/piqc-test-outputs/10-piqc-facts/piqc-facts.json
+```
+✅ **Expected**: JSON file with facts like `runtime.engineType`, `hardware.gpuType`
+
+---
+
+#### Test 11: Scan All Namespaces
+```bash
+poetry run piqc scan --format table | tee ~/piqc-test-outputs/11-all-namespaces.txt
+```
+✅ **Expected**: Scans all namespaces, finds the inference workload
+
+---
+
+#### Test 12: Combined Output (Single File)
+```bash
+poetry run piqc scan --combined --format yaml -o ~/piqc-test-outputs/12-combined
+ls -la ~/piqc-test-outputs/12-combined/
+```
+✅ **Expected**: Single combined YAML file for all deployments
+
+---
+
+#### Test 13: Disable GPU Metrics (Faster Scan)
+```bash
+poetry run piqc scan --namespace inference --no-exec --format yaml > ~/piqc-test-outputs/13-no-gpu.yaml
+```
+✅ **Expected**: Faster scan, but no GPU utilization data
+
+---
+
+#### Test 14: Check Version
+```bash
+poetry run piqc version | tee ~/piqc-test-outputs/14-version.txt
+```
+✅ **Expected**: Shows version information
+
+---
+
+### List All Generated Outputs
+
+```bash
+echo "=== All Generated Output Files ===" | tee ~/piqc-test-outputs/00-summary.txt
+ls -la ~/piqc-test-outputs/ | tee -a ~/piqc-test-outputs/00-summary.txt
+echo "" >> ~/piqc-test-outputs/00-summary.txt
+echo "=== File Sizes ===" >> ~/piqc-test-outputs/00-summary.txt
+du -h ~/piqc-test-outputs/* >> ~/piqc-test-outputs/00-summary.txt
+```
+
+---
+
+### Download All Outputs (Cloud Shell)
+
+#### Step 1: Create a ZIP of all outputs
+
+```bash
+cd ~
+zip -r piqc-test-outputs.zip piqc-test-outputs/
+ls -la piqc-test-outputs.zip
+```
+
+#### Step 2: Download the ZIP
+
+1. In Cloud Shell, click the **three dots menu (⋮)** in the top-right corner
+2. Click **"Download"**
+3. Type: `piqc-test-outputs.zip`
+4. Click **"Download"**
+5. Save to your Windows Desktop
+
+#### Step 3: Extract on Windows
+
+1. Go to your Downloads folder
+2. Right-click `piqc-test-outputs.zip`
+3. Select **"Extract All..."**
+4. Choose where to extract
+
+---
+
+### Output Files Summary
+
+| File | Description |
+|------|-------------|
+| `01-connection-test.txt` | Cluster connection test results |
+| `02-scan-table.txt` | Table format scan output |
+| `03-modelspec.yaml` | Full ModelSpec in YAML |
+| `04-modelspec.json` | Full ModelSpec in JSON |
+| `05-output-dir/` | Directory with YAML files |
+| `06-verbose.txt` | Verbose mode output |
+| `07-debug.txt` | Debug mode output |
+| `08-gpu-metrics.yaml` | Scan with GPU metrics |
+| `09-runtime-metrics.yaml` | Runtime metrics from vLLM API |
+| `10-piqc-facts/piqc-facts.json` | PIQC facts bundle |
+| `11-all-namespaces.txt` | Full cluster scan |
+| `12-combined/` | Combined output directory |
+| `13-no-gpu.yaml` | Scan without GPU metrics |
+| `14-version.txt` | Version information |
+
+---
+
+## 📊 Feature Verification Checklist
+
+After testing, verify these features work:
+
+| Feature | Command to Verify | What to Look For |
+|---------|-------------------|------------------|
+| vLLM Detection | See Test 2 | `engine.name: vllm` |
+| Model Name | See Test 3 | `model.name: TinyLlama...` |
+| GPU Metrics | See Test 8 | GPU utilization percentage |
+| Precision | See Test 3 | `inference.precision: float16` |
+| Max Model Len | See Test 3 | `inference.maxModelLen: 2048` |
+| Tensor Parallel | See Test 3 | `inference.tensorParallelSize: 1` |
+| Runtime Metrics | See Test 9 | `runtimeState.vllm...` |
+| PIQC Facts | See Test 10 | Facts bundle JSON |
+
+---
+
+## 🧹 PHASE 7: CLEANUP (VERY IMPORTANT!)
+
+> ⚠️ **DO THIS TO STOP BILLING!** The cluster costs money every minute it runs.
+
+#### Step 7.1: Delete the vLLM Deployment
+```bash
+kubectl delete -f vllm-tinyllama.yaml
+```
+
+#### Step 7.2: Delete the Cluster
+```bash
+gcloud container clusters delete piqc-test --zone=us-central1-a --quiet
+```
+
+> ⏱️ **Wait**: This takes 3-5 minutes
+
+#### Step 7.3: Verify Deletion
+```bash
+gcloud container clusters list
+```
+✅ **Expected**: Empty list or "Listed 0 items"
+
+---
+
+## 💻 ALTERNATIVE: Test from Your Windows Laptop (Remote Testing)
+
+Instead of using Cloud Shell, you can run PIQC directly from your Windows laptop. This connects to the GKE cluster remotely.
+
+> ⚠️ **Prerequisite**: The GKE cluster must already be created (Phase 3)
+
+---
+
+### Step R1: Install Required Tools on Windows
+
+#### 1. Install Google Cloud CLI
+
+1. Download the installer from: **https://cloud.google.com/sdk/docs/install**
+2. Run the installer (GoogleCloudSDKInstaller.exe)
+3. Follow the prompts (accept defaults)
+4. **Check "Run gcloud init"** at the end
+5. **Restart your terminal** after installation
+
+#### 2. Verify Installation
+
+Open **PowerShell** (search for "PowerShell" in Start menu) and run:
+
+```powershell
+gcloud version
+```
+
+You should see version information.
+
+#### 3. Install kubectl
+
+In PowerShell:
+
+```powershell
+gcloud components install kubectl
+```
+
+Type `Y` when prompted.
+
+#### 4. Install Python 3.11+ (if not installed)
+
+1. Download from: **https://www.python.org/downloads/**
+2. Run the installer
+3. **✅ CHECK "Add Python to PATH"** (very important!)
+4. Click "Install Now"
+
+Verify:
+```powershell
+python --version
+```
+
+#### 5. Install Poetry
+
+```powershell
+pip install poetry
+```
+
+---
+
+### Step R2: Authenticate with GCP
+
+```powershell
+# Login to Google Cloud (opens browser)
+gcloud auth login
+```
+
+A browser window opens - sign in with the account that has GCP access.
+
+```powershell
+# Set the project (replace with actual project ID)
+gcloud config set project YOUR_PROJECT_ID
+```
+
+---
+
+### Step R3: Get Cluster Credentials (kubeconfig)
+
+This downloads the connection info for your cluster:
+
+```powershell
+gcloud container clusters get-credentials piqc-test --zone=us-central1-a
+```
+
+**Verify connection:**
+```powershell
+kubectl get nodes
+```
+
+✅ **Expected**: Shows your cluster node with T4 GPU
+
+---
+
+### Step R4: Navigate to Your Project
+
+```powershell
+# Go to ModelSpec folder
+cd C:\Users\Administrator\Desktop\ModelSpec
+
+# Install dependencies (first time only)
+poetry install
+```
+
+---
+
+### Step R5: Apply RBAC (One-time)
+
+```powershell
+kubectl apply -f rbac/
+```
+
+---
+
+### Step R6: Run PIQC Commands and Save Outputs!
+
+First, create an output folder:
+
+```powershell
+mkdir C:\Users\Administrator\Desktop\piqc-test-outputs
+cd C:\Users\Administrator\Desktop\ModelSpec
+```
+
+Now run all tests:
+
+```powershell
+# Test 1: Connection Test
+poetry run piqc test-connection | Tee-Object -FilePath C:\Users\Administrator\Desktop\piqc-test-outputs\01-connection-test.txt
+
+# Test 2: Basic Scan (Table View)
+poetry run piqc scan --namespace inference --format table | Tee-Object -FilePath C:\Users\Administrator\Desktop\piqc-test-outputs\02-scan-table.txt
+
+# Test 3: YAML Output
+poetry run piqc scan --namespace inference --format yaml > C:\Users\Administrator\Desktop\piqc-test-outputs\03-modelspec.yaml
+
+# Test 4: JSON Output
+poetry run piqc scan --namespace inference --format json > C:\Users\Administrator\Desktop\piqc-test-outputs\04-modelspec.json
+
+# Test 5: Save to Output Directory
+poetry run piqc scan --namespace inference --format yaml -o C:\Users\Administrator\Desktop\piqc-test-outputs\05-output-dir
+
+# Test 6: Verbose Mode
+poetry run piqc scan --namespace inference --format table -v 2>&1 | Tee-Object -FilePath C:\Users\Administrator\Desktop\piqc-test-outputs\06-verbose.txt
+
+# Test 7: Debug Mode
+poetry run piqc scan --namespace inference --format table --debug 2>&1 | Tee-Object -FilePath C:\Users\Administrator\Desktop\piqc-test-outputs\07-debug.txt
+
+# Test 8: GPU Metrics
+poetry run piqc scan --namespace inference --format yaml -v 2>&1 | Tee-Object -FilePath C:\Users\Administrator\Desktop\piqc-test-outputs\08-gpu-metrics.yaml
+
+# Test 9: Runtime Metrics
+poetry run piqc scan --namespace inference --collect-runtime --format yaml > C:\Users\Administrator\Desktop\piqc-test-outputs\09-runtime-metrics.yaml
+
+# Test 10: PIQC Facts Bundle
+poetry run piqc scan --namespace inference --output-piqc -o C:\Users\Administrator\Desktop\piqc-test-outputs\10-piqc-facts
+
+# Test 11: All Namespaces
+poetry run piqc scan --format table | Tee-Object -FilePath C:\Users\Administrator\Desktop\piqc-test-outputs\11-all-namespaces.txt
+
+# Test 12: Combined Output
+poetry run piqc scan --combined --format yaml -o C:\Users\Administrator\Desktop\piqc-test-outputs\12-combined
+
+# Test 13: No GPU Metrics
+poetry run piqc scan --namespace inference --no-exec --format yaml > C:\Users\Administrator\Desktop\piqc-test-outputs\13-no-gpu.yaml
+
+# Test 14: Version
+poetry run piqc version | Tee-Object -FilePath C:\Users\Administrator\Desktop\piqc-test-outputs\14-version.txt
+```
+
+**View all output files:**
+```powershell
+dir C:\Users\Administrator\Desktop\piqc-test-outputs
+```
+
+All files are saved on your Desktop in `piqc-test-outputs` folder!
+
+---
+
+### Step R7: Using Custom Kubeconfig (Optional)
+
+If you have the kubeconfig in a custom location:
+
+```powershell
+# Specify custom kubeconfig path
+poetry run piqc scan --kubeconfig C:\path\to\kubeconfig --format table
+
+# Specify a specific context
+poetry run piqc scan --context gke_YOUR_PROJECT_us-central1-a_piqc-test --format table
+```
+
+**To see available contexts:**
+```powershell
+kubectl config get-contexts
+```
+
+---
+
+### Windows Remote Testing Checklist
+
+| Step | Command | Expected Result |
+|------|---------|-----------------|
+| Check gcloud | `gcloud version` | Shows version info |
+| Check kubectl | `kubectl version --client` | Shows client version |
+| Check Python | `python --version` | Shows Python 3.11+ |
+| Check connection | `kubectl get nodes` | Shows cluster nodes |
+| Check PIQC | `poetry run piqc version` | Shows PIQC version |
+| Test scan | `poetry run piqc scan -n inference` | Shows vLLM deployment |
+
+---
+
+### Troubleshooting Windows Remote Connection
+
+**"gcloud is not recognized"**
+- Restart PowerShell after installing gcloud
+- Or run the installer again and make sure "Add to PATH" is selected
+
+**"Unable to connect to the server"**
+```powershell
+# Re-authenticate
+gcloud auth login
+gcloud container clusters get-credentials piqc-test --zone=us-central1-a
+```
+
+**"The connection to the server was refused"**
+- Make sure the cluster is still running:
+```powershell
+gcloud container clusters list
+```
+
+**"Error: You must be logged in to the server"**
+```powershell
+# Get fresh credentials
+gcloud auth application-default login
+```
+
+**"poetry is not recognized"**
+```powershell
+# Reinstall poetry
+pip install poetry
+
+# Or try with full path
+python -m poetry run piqc scan --format table
+```
+
+---
+
+## 💰 Cost Summary
+
+| Resource | Hourly Cost (Spot) | For 1 Hour Test |
+|----------|-------------------|-----------------|
+| T4 GPU | ~$0.35 | $0.35 |
+| n1-standard-4 | ~$0.05 | $0.05 |
+| GKE Management | ~$0.10 | $0.10 |
+| **TOTAL** | | **~$0.50/hour** |
+
+**For a complete 2-hour test: ~$1-2**
+
+---
+
+## 🆘 Troubleshooting
+
+### "Pod stuck in Pending"
+```bash
+kubectl describe pod -n inference -l app=vllm-tinyllama
+```
+Usually means GPU quota not available. Try a different zone.
+
+### "GPU not available"
+Wait longer for driver installation, or check:
+```bash
+kubectl get nodes -o wide
+kubectl describe node | grep -A5 "Capacity:"
+```
+
+### "Permission denied"
+Make sure RBAC is applied:
+```bash
+kubectl apply -f rbac/
+```
+
+### "Model loading slow"
+TinyLlama is small (~2GB). If it takes >10 minutes, check logs:
+```bash
+kubectl logs -n inference -l app=vllm-tinyllama -f
+```
+
+---
+
+## 📝 Quick Reference Commands
+
+```bash
+# Check cluster status
+gcloud container clusters list
+
+# Check pods
+kubectl get pods -n inference
+
+# Check pod logs
+kubectl logs -n inference -l app=vllm-tinyllama
+
+# Delete everything and stop billing
+gcloud container clusters delete piqc-test --zone=us-central1-a --quiet
+```
+
+---
+
+> 💡 **Remember**: Always delete the cluster when done to stop billing!

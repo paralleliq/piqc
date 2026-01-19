@@ -1,0 +1,80 @@
+# Triton Inference Server Deployment
+#
+# Simulates a multi-model Triton server with 4 GPUs.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: triton-server
+  namespace: inference
+  labels:
+    app: triton-server
+    app.kubernetes.io/name: tritonserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: triton-server
+  template:
+    metadata:
+      labels:
+        app: triton-server
+        app.kubernetes.io/name: tritonserver
+    spec:
+      containers:
+        - name: triton
+          image: modelspec-test/triton-mock:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "/app/server.py"]
+          env:
+            - name: TRITON_SERVER_VERSION
+              value: "2.38.0"
+            - name: HTTP_PORT
+              value: "8000"
+            - name: FAKE_GPU_COUNT
+              value: "4"
+            - name: FAKE_GPU_MODEL
+              value: "A100-SXM4-40GB"
+            - name: FAKE_GPU_MEMORY_TOTAL
+              value: "40960"
+            - name: FAKE_GPU_MEMORY_USED
+              value: "28000"
+            - name: FAKE_GPU_UTILIZATION
+              value: "75"
+          args:
+            - "--model-repository=/models"
+            - "--http-port=8000"
+            - "--grpc-port=8001"
+            - "--metrics-port=8002"
+          ports:
+            - containerPort: 8000
+              name: http
+            - containerPort: 8001
+              name: grpc
+            - containerPort: 8002
+              name: metrics
+          resources:
+            requests:
+              cpu: "4"
+              memory: "16Gi"
+              nvidia.com/gpu: "4"
+            limits:
+              cpu: "8"
+              memory: "32Gi"
+              nvidia.com/gpu: "4"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: triton-server
+  namespace: inference
+spec:
+  selector:
+    app: triton-server
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+    - name: grpc
+      port: 8001
+      targetPort: 8001

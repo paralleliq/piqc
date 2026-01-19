@@ -1,0 +1,232 @@
+\documentclass[11pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{enumitem}
+
+% Page geometry
+\geometry{margin=1in}
+
+% Colors
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+\definecolor{linkblue}{rgb}{0.1,0.3,0.6}
+
+% Code listings style
+\lstdefinestyle{bashstyle}{
+    backgroundcolor=\color{backcolour},
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    frame=single,
+    framerule=0.5pt,
+}
+\lstset{style=bashstyle}
+
+% Header/Footer
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{PIQC Tool Testing}
+\lhead{GPU Quota Request Guide}
+\rfoot{Page \thepage}
+
+% Hyperref setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=linkblue,
+    urlcolor=linkblue,
+}
+
+\begin{document}
+
+% Title
+\begin{center}
+    {\LARGE\textbf{GPU Quota Request Guide for Admin}}\\[1em]
+    {\large For PIQC Tool Testing on GKE}\\[0.5em]
+    \textit{Date: January 11, 2026}
+\end{center}
+
+\vspace{1em}
+
+\begin{tcolorbox}[colback=backcolour,colframe=black!50,title=\textbf{Project Information}]
+\begin{tabular}{@{}ll@{}}
+\textbf{Project ID:} & \texttt{piqc-483417} \\
+\textbf{User to Grant Access:} & \texttt{ammarkhan2264388@gmail.com} \\
+\end{tabular}
+\end{tcolorbox}
+
+%==============================================================================
+\section{Overview}
+%==============================================================================
+
+We need \textbf{1 GPU} to test the PIQC tool on Google Kubernetes Engine. This requires:
+
+\begin{enumerate}
+    \item Requesting GPU quota from Google (admin must do this)
+    \item Granting me permission to proceed with testing
+\end{enumerate}
+
+\textbf{Estimated Cost:} \textasciitilde\$1-2 for complete testing (using Spot instances)
+
+%==============================================================================
+\section{Step 1: Request GPU Quota (5 minutes)}
+%==============================================================================
+
+\subsection{1.1 Open the Quotas Page}
+
+Click this link (make sure you're logged in as project owner):
+
+\begin{center}
+\fbox{\url{https://console.cloud.google.com/iam-admin/quotas?project=piqc-483417}}
+\end{center}
+
+\subsection{1.2 Filter for GPU Quota}
+
+\begin{enumerate}
+    \item In the \textbf{Filter} box at the top, type: \texttt{GPUS\_ALL\_REGIONS}
+    \item Press Enter
+    \item You should see a row showing \textbf{"GPUs (all regions)"} with \textbf{Limit: 0}
+\end{enumerate}
+
+\subsection{1.3 Request Quota Increase}
+
+\begin{enumerate}
+    \item \textbf{Check the checkbox} next to "GPUs (all regions)"
+    \item Click the \textbf{"EDIT QUOTAS"} button at the top of the page
+    \item A side panel will open on the right
+\end{enumerate}
+
+\subsection{1.4 Fill in the Request Form}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lp{10cm}@{}}
+\toprule
+\textbf{Field} & \textbf{Value} \\
+\midrule
+New limit & \texttt{1} \\
+Request description & Testing PIQC (AI/ML monitoring tool) on GKE with T4 GPU. Short-term testing only, will delete resources after testing. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{1.5 Submit the Request}
+
+\begin{enumerate}
+    \item Click \textbf{"NEXT"}
+    \item Verify your contact information
+    \item Click \textbf{"SUBMIT REQUEST"}
+\end{enumerate}
+
+\subsection{1.6 Confirmation}
+
+\begin{itemize}
+    \item You'll see a confirmation message
+    \item Google will email you when the quota is approved
+    \item \textbf{Typical wait time: 24-48 hours} (sometimes faster)
+\end{itemize}
+
+%==============================================================================
+\section{Step 2: Grant Permissions (1 minute)}
+%==============================================================================
+
+While waiting for quota approval, please grant me the necessary permissions.
+
+\subsection{Option A: Using Cloud Console (Easiest)}
+
+\begin{enumerate}
+    \item Go to: \url{https://console.cloud.google.com/iam-admin/iam?project=piqc-483417}
+    \item Click \textbf{"+ GRANT ACCESS"} at the top
+    \item In \textbf{"New principals"}, enter: \texttt{ammarkhan2264388@gmail.com}
+    \item Click \textbf{"Select a role"} and choose: \texttt{Project > Owner}
+    \item Click \textbf{"Save"}
+\end{enumerate}
+
+\subsection{Option B: Using Cloud Shell Command}
+
+Open Cloud Shell and run:
+
+\begin{lstlisting}[language=bash]
+gcloud projects add-iam-policy-binding piqc-483417 \
+  --member="user:ammarkhan2264388@gmail.com" \
+  --role="roles/owner"
+\end{lstlisting}
+
+%==============================================================================
+\section{Step 3: Notify Me}
+%==============================================================================
+
+Once you've completed both steps, please confirm:
+
+\begin{tcolorbox}[colback=green!5,colframe=green!50!black,title=\textbf{Checklist}]
+\begin{itemize}
+    \item[$\square$] GPU quota requested (I'll wait for Google's approval email)
+    \item[$\square$] Permissions granted (I can start preparing)
+\end{itemize}
+\end{tcolorbox}
+
+%==============================================================================
+\section{What Happens After Quota is Approved?}
+%==============================================================================
+
+Once Google approves the GPU quota (you'll receive an email), I will:
+
+\begin{enumerate}
+    \item Create a GKE cluster with 1 T4 GPU (\textasciitilde\$0.35/hour with Spot pricing)
+    \item Deploy a test AI model (TinyLlama - small and fast)
+    \item Run the PIQC tool and generate test outputs
+    \item \textbf{Delete all resources} to stop charges
+\end{enumerate}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Phase} & \textbf{Duration} & \textbf{Cost} \\
+\midrule
+Testing time & 1-2 hours & \textasciitilde\$1-2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%==============================================================================
+\section{Timeline Summary}
+%==============================================================================
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llc@{}}
+\toprule
+\textbf{Task} & \textbf{Who} & \textbf{Time} \\
+\midrule
+Request GPU quota & Admin (you) & 5 min \\
+Google approves quota & Google & 24-48 hours \\
+Grant me permissions & Admin (you) & 1 min \\
+Complete testing & Me & 1-2 hours \\
+Delete resources & Me & 5 min \\
+\bottomrule
+\end{tabular}
+\caption{Project timeline}
+\end{table}
+
+%==============================================================================
+\section{Questions?}
+%==============================================================================
+
+If you have any issues with these steps, please let me know and I can help troubleshoot.
+
+\vspace{2em}
+
+\begin{center}
+\textbf{Thank you for your assistance!}
+\end{center}
+
+\end{document}

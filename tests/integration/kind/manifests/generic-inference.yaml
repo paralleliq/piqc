@@ -1,0 +1,51 @@
+# Generic ML Workload (Unknown Framework)
+#
+# Simulates an inference workload that doesn't match known patterns.
+# Tests fallback detection.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: custom-inference
+  namespace: inference
+  labels:
+    app: custom-inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: custom-inference
+  template:
+    metadata:
+      labels:
+        app: custom-inference
+    spec:
+      containers:
+        - name: inference
+          image: modelspec-test/vllm-mock:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "/app/server.py"]
+          env:
+            # Generic env vars (not framework-specific)
+            - name: MODEL_NAME
+              value: "custom-model-v1"
+            - name: FAKE_GPU_COUNT
+              value: "1"
+            - name: FAKE_GPU_MODEL
+              value: "T4"
+            - name: FAKE_GPU_MEMORY_TOTAL
+              value: "16384"
+            - name: FAKE_GPU_MEMORY_USED
+              value: "12000"
+            - name: FAKE_GPU_UTILIZATION
+              value: "65"
+          args:
+            - "--model"
+            - "custom-model-v1"
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              nvidia.com/gpu: "1"
+            limits:
+              nvidia.com/gpu: "1"

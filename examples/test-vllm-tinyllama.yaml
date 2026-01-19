@@ -1,0 +1,103 @@
+# vLLM TinyLlama Deployment for Testing ModelSpec Introspector
+# This is the most cost-effective setup for comprehensive feature testing
+#
+# Model: TinyLlama/TinyLlama-1.1B-Chat-v1.0 (~2GB VRAM)
+# GPU: NVIDIA T4 (16GB) - cheapest on GCP
+# Estimated cost: $0.35/hr on Spot instances
+#
+# Deploy with: kubectl apply -f test-vllm-tinyllama.yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inference
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-tinyllama
+  namespace: inference
+  labels:
+    app: vllm-tinyllama
+    app.kubernetes.io/name: vllm
+    framework: vllm
+    team: ml-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-tinyllama
+  template:
+    metadata:
+      labels:
+        app: vllm-tinyllama
+        app.kubernetes.io/name: vllm
+        framework: vllm
+        team: ml-platform
+    spec:
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:latest
+        args:
+          - "--model"
+          - "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+          - "--served-model-name"
+          - "tinyllama"
+          - "--dtype"
+          - "float16"
+          - "--max-model-len"
+          - "2048"
+          - "--tensor-parallel-size"
+          - "1"
+          - "--gpu-memory-utilization"
+          - "0.9"
+          - "--max-num-seqs"
+          - "64"
+          - "--enable-prefix-caching"
+        env:
+          - name: VLLM_VERSION
+            value: "0.4.0"
+          - name: MODEL_NAME
+            value: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+        ports:
+          - containerPort: 8000
+            name: http
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+            cpu: "2"
+            memory: "8Gi"
+          limits:
+            nvidia.com/gpu: 1
+            cpu: "4"
+            memory: "12Gi"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 10
+          failureThreshold: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 180
+          periodSeconds: 30
+          failureThreshold: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-tinyllama
+  namespace: inference
+  labels:
+    app: vllm-tinyllama
+spec:
+  selector:
+    app: vllm-tinyllama
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+  type: ClusterIP

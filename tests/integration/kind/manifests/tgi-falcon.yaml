@@ -1,0 +1,80 @@
+# TGI (Text Generation Inference) Deployment
+#
+# Simulates a HuggingFace TGI deployment.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tgi-falcon
+  namespace: inference
+  labels:
+    app: tgi-falcon
+    app.kubernetes.io/name: text-generation-inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tgi-falcon
+  template:
+    metadata:
+      labels:
+        app: tgi-falcon
+        app.kubernetes.io/name: text-generation-inference
+    spec:
+      containers:
+        - name: tgi
+          image: modelspec-test/tgi-mock:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "/app/server.py"]
+          env:
+            - name: MODEL_ID
+              value: "tiiuae/falcon-7b-instruct"
+            - name: NUM_SHARD
+              value: "2"
+            - name: MAX_INPUT_LENGTH
+              value: "1024"
+            - name: MAX_TOTAL_TOKENS
+              value: "2048"
+            - name: PORT
+              value: "80"
+            - name: FAKE_GPU_COUNT
+              value: "2"
+            - name: FAKE_GPU_MODEL
+              value: "A10G"
+            - name: FAKE_GPU_MEMORY_TOTAL
+              value: "24576"
+            - name: FAKE_GPU_MEMORY_USED
+              value: "18000"
+            - name: FAKE_GPU_UTILIZATION
+              value: "82"
+          args:
+            - "--model-id"
+            - "tiiuae/falcon-7b-instruct"
+            - "--num-shard"
+            - "2"
+            - "--port"
+            - "80"
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              cpu: "2"
+              memory: "16Gi"
+              nvidia.com/gpu: "2"
+            limits:
+              cpu: "4"
+              memory: "32Gi"
+              nvidia.com/gpu: "2"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tgi-falcon
+  namespace: inference
+spec:
+  selector:
+    app: tgi-falcon
+  ports:
+    - port: 80
+      targetPort: 80

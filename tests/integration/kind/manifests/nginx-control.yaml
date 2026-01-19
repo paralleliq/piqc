@@ -1,0 +1,51 @@
+# Non-ML Workload (Control Group)
+#
+# Regular web server that should NOT be detected as inference.
+# Tests that non-ML workloads are correctly filtered out.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: web
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-web
+  namespace: web
+  labels:
+    app: nginx-web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx-web
+  template:
+    metadata:
+      labels:
+        app: nginx-web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.24-alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-web
+  namespace: web
+spec:
+  selector:
+    app: nginx-web
+  ports:
+    - port: 80
+      targetPort: 80

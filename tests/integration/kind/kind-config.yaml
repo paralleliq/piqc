@@ -1,0 +1,43 @@
+# Kind cluster configuration for ModelSpec Introspector integration tests
+#
+# This creates a single-node Kubernetes cluster optimized for testing
+# against mock AI/ML inference workloads.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: modelspec-test
+
+nodes:
+  # Single control-plane node (acts as both master and worker)
+  - role: control-plane
+    # Extra port mappings for accessing services
+    extraPortMappings:
+      # vLLM service
+      - containerPort: 30800
+        hostPort: 8000
+        protocol: TCP
+      # Triton HTTP
+      - containerPort: 30801
+        hostPort: 8001
+        protocol: TCP
+      # Triton gRPC
+      - containerPort: 30850
+        hostPort: 8500
+        protocol: TCP
+
+# Networking configuration
+networking:
+  # Pod subnet
+  podSubnet: "10.244.0.0/16"
+  # Service subnet
+  serviceSubnet: "10.96.0.0/12"
+
+# Feature gates (optional)
+featureGates:
+  # Enable for newer features if needed
+  {}
+
+# Containerd config patches
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
+      endpoint = ["http://localhost:5000"]

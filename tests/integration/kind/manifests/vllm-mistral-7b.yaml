@@ -1,0 +1,83 @@
+# vLLM Mistral-7B Deployment (Single GPU)
+#
+# Simulates a smaller vLLM deployment with a single GPU.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-mistral-7b
+  namespace: inference
+  labels:
+    app: vllm-mistral-7b
+    app.kubernetes.io/name: vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-mistral-7b
+  template:
+    metadata:
+      labels:
+        app: vllm-mistral-7b
+        app.kubernetes.io/name: vllm
+    spec:
+      containers:
+        - name: vllm
+          image: modelspec-test/vllm-mock:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "/app/server.py"]
+          env:
+            - name: VLLM_VERSION
+              value: "0.2.7"
+            - name: MODEL_NAME
+              value: "mistralai/Mistral-7B-Instruct-v0.1"
+            - name: SERVED_MODEL_NAME
+              value: "mistral-7b"
+            - name: TENSOR_PARALLEL_SIZE
+              value: "1"
+            - name: DTYPE
+              value: "float16"
+            - name: MAX_MODEL_LEN
+              value: "8192"
+            - name: GPU_MEMORY_UTILIZATION
+              value: "0.85"
+            - name: FAKE_GPU_COUNT
+              value: "1"
+            - name: FAKE_GPU_MODEL
+              value: "A100-SXM4-40GB"
+            - name: FAKE_GPU_MEMORY_TOTAL
+              value: "40960"
+            - name: FAKE_GPU_MEMORY_USED
+              value: "32000"
+            - name: FAKE_GPU_UTILIZATION
+              value: "92"
+          args:
+            - "--model"
+            - "mistralai/Mistral-7B-Instruct-v0.1"
+            - "--dtype"
+            - "float16"
+            - "--max-model-len"
+            - "8192"
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: "4"
+              memory: "32Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: "64Gi"
+              nvidia.com/gpu: "1"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-mistral-7b
+  namespace: inference
+spec:
+  selector:
+    app: vllm-mistral-7b
+  ports:
+    - port: 8000
+      targetPort: 8000

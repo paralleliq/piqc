@@ -1,0 +1,77 @@
+{
+  "apiVersion": "modelspec.paralleliq.ai/v1",
+  "kind": "ModelSpec",
+  "metadata": {
+    "name": "vllm-tinyllama",
+    "namespace": "inference",
+    "labels": {
+      "app": "vllm-tinyllama",
+      "app.kubernetes.io/name": "vllm",
+      "framework": "vllm",
+      "pod-template-hash": "78c597864f"
+    },
+    "annotations": {},
+    "collectionTimestamp": "2026-01-12T22:06:08.440945Z",
+    "collectorVersion": "1.0.0"
+  },
+  "model": {
+    "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "servedName": "tinyllama",
+    "source": "huggingface",
+    "sourcePath": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "architecture": "llama",
+    "parameters": "1.1B",
+    "confidence": 0.8,
+    "identificationMethod": "cli"
+  },
+  "engine": {
+    "name": "vllm",
+    "detectionConfidence": 0.7000000000000001
+  },
+  "inference": {
+    "precision": "float16",
+    "maxModelLen": 1024
+  },
+  "resources": {
+    "replicas": 1,
+    "gpus": [
+      {
+        "index": 0,
+        "type": "Tesla T4",
+        "memoryTotal": "15GB",
+        "memoryUsed": "7GB",
+        "temperature": 55,
+        "powerDraw": 28,
+        "podName": "vllm-tinyllama-78c597864f-t24m7"
+      }
+    ],
+    "cpuRequest": "2",
+    "cpuLimit": "4",
+    "memoryRequest": "8Gi",
+    "memoryLimit": "12Gi"
+  },
+  "endpoints": [
+    {
+      "type": "http",
+      "port": 8000,
+      "path": "/v1/completions"
+    }
+  ],
+  "kubernetes": {
+    "deploymentType": "Deployment",
+    "clusterName": "gke_piqc-483417_us-central1-a_piqc-test",
+    "image": "vllm/vllm-openai:v0.6.3.post1",
+    "imageTag": "v0.6.3.post1"
+  },
+  "collection": {
+    "mode": "remote",
+    "duration": "758ms",
+    "warnings": [],
+    "errors": [],
+    "dataCompleteness": {
+      "staticConfig": true,
+      "gpuMetrics": true,
+      "runtimeMetrics": false
+    }
+  }
+}

@@ -1,0 +1,480 @@
+"""
+Scan orchestrator.
+
+Coordinates the scanning process across namespaces, collecting
+data from all sources and generating ModelSpec output.
+"""
+
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from typing import Optional
+
+from piqc import __version__
+from piqc.collectors.config_collector import ConfigCollector
+from piqc.collectors.gpu_collector import GPUCollector, GPUMetrics
+from piqc.collectors.vllm_api_client import (
+    KubectlExecVLLMClient,
+    VLLMAPIClient,
+    VLLMRuntimeMetrics,
+    discover_vllm_service,
+)
+from piqc.collectors.vllm_collector import VLLMCollector
+from piqc.core.discovery import DeploymentDiscovery
+from piqc.core.k8s_client import K8sClient
+from piqc.models.modelspec import (
+    CollectionMetadata,
+    DataCompleteness,
+    Endpoint,
+    EngineInfo,
+    GPUInfo,
+    InferenceConfig,
+    InferenceDeployment,
+    KubernetesMetadata,
+    MetadataInfo,
+    ModelInfo,
+    ModelSpec,
+    ResourceInfo,
+    RuntimeState,
+    VLLMRuntimeState,
+)
+from piqc.parsers.vllm_parser import VLLMParser
+from piqc.utils.exceptions import GPUMetricsUnavailableError
+from piqc.utils.logger import get_logger
+
+
+logger = get_logger(__name__)
+
+
+class ScanResult:
+    """Results from a scan operation."""
+    
+    def __init__(self) -> None:
+        self.modelspecs: list[ModelSpec] = []
+        self.warnings: list[str] = []
+        self.errors: list[str] = []
+        self.duration_seconds: float = 0.0
+        self.namespaces_scanned: int = 0
+        self.pods_analyzed: int = 0
+        self.deployments_found: int = 0
+    
+    def add_warning(self, message: str) -> None:
+        """Add a warning message."""
+        self.warnings.append(message)
+        logger.warning(message)
+    
+    def add_error(self, message: str) -> None:
+        """Add an error message."""
+        self.errors.append(message)
+        logger.error(message)
+
+
+class ScanOrchestrator:
+    """
+    Orchestrates the complete scanning process.
+    
+    Coordinates discovery, data collection, parsing, and ModelSpec
+    generation across all namespaces.
+    """
+    
+    def __init__(
+        self,
+        k8s_client: K8sClient,
+        enable_exec: bool = True,
+        enable_logs: bool = True,
+        enable_runtime_collection: bool = False,
+        workers: int = 5,
+        timeout: int = 30,
+    ) -> None:
+        """
+        Initialize the orchestrator.
+        
+        Args:
+            k8s_client: Kubernetes client instance.
+            enable_exec: Whether to enable pod exec for GPU metrics.
+            enable_logs: Whether to enable log reading.
+            enable_runtime_collection: Whether to collect runtime metrics via vLLM API.
+            workers: Number of parallel workers for scanning.
+            timeout: Timeout for individual operations.
+        """
+        self.k8s_client = k8s_client
+        self.enable_exec = enable_exec
+        self.enable_logs = enable_logs
+        self.enable_runtime_collection = enable_runtime_collection
+        self.workers = workers
+        self.timeout = timeout
+        
+        # Initialize components
+        self.discovery = DeploymentDiscovery()
+        self.config_collector = ConfigCollector()
+        self.vllm_collector = VLLMCollector()
+        self.gpu_collector = GPUCollector(k8s_client, exec_timeout=timeout)
+        
+        self.vllm_parser = VLLMParser()
+    
+    def scan(
+        self,
+        namespaces: Optional[list[str]] = None,
+    ) -> ScanResult:
+        """
+        Execute a full cluster scan.
+        
+        Args:
+            namespaces: Specific namespaces to scan. If None, scans all.
+            
+        Returns:
+            ScanResult with all collected data.
+        """
+        start_time = time.time()
+        result = ScanResult()
+        
+        # Get namespaces to scan
+        if namespaces:
+            target_namespaces = namespaces
+        else:
+            try:
+                target_namespaces = self.k8s_client.list_namespaces()
+            except Exception as e:
+                result.add_error(f"Failed to list namespaces: {e}")
+                return result
+        
+        result.namespaces_scanned = len(target_namespaces)
+        logger.info(f"Scanning {len(target_namespaces)} namespace(s)")
+        
+        # Discover all pods
+        all_deployments: list[InferenceDeployment] = []
+        
+        for namespace in target_namespaces:
+            try:
+                deployments = self._scan_namespace(namespace, result)
+                all_deployments.extend(deployments)
+            except Exception as e:
+                result.add_warning(f"Failed to scan namespace '{namespace}': {e}")
+        
+        # Group deployments
+        grouped = self.discovery.group_deployments(all_deployments)
+        result.deployments_found = len(grouped)
+        
+        logger.info(f"Found {len(grouped)} inference deployment(s)")
+        
+        # Generate ModelSpecs
+        if self.workers > 1 and len(grouped) > 1:
+            result.modelspecs = self._process_parallel(grouped, result)
+        else:
+            result.modelspecs = self._process_sequential(grouped, result)
+        
+        result.duration_seconds = time.time() - start_time
+        
+        return result
+    
+    def _scan_namespace(
+        self,
+        namespace: str,
+        result: ScanResult,
+    ) -> list[InferenceDeployment]:
+        """Scan a single namespace for inference deployments."""
+        logger.debug(f"Scanning namespace: {namespace}")
+        
+        # Get running pods
+        pods = self.k8s_client.list_pods(
+            namespace=namespace,
+            field_selector="status.phase=Running",
+        )
+        
+        running_pods = self.discovery.filter_running_pods(pods)
+        result.pods_analyzed += len(running_pods)
+        
+        # Analyze each pod
+        deployments: list[InferenceDeployment] = []
+        
+        for pod in running_pods:
+            deployment = self.discovery.analyze_pod(pod)
+            if deployment:
+                deployments.append(deployment)
+        
+        return deployments
+    
+    def _process_sequential(
+        self,
+        deployments: list[InferenceDeployment],
+        result: ScanResult,
+    ) -> list[ModelSpec]:
+        """Process deployments sequentially."""
+        modelspecs: list[ModelSpec] = []
+        
+        for deployment in deployments:
+            try:
+                modelspec = self._generate_modelspec(deployment, result)
+                modelspecs.append(modelspec)
+            except Exception as e:
+                result.add_warning(
+                    f"Failed to process {deployment.namespace}/{deployment.name}: {e}"
+                )
+        
+        return modelspecs
+    
+    def _process_parallel(
+        self,
+        deployments: list[InferenceDeployment],
+        result: ScanResult,
+    ) -> list[ModelSpec]:
+        """Process deployments in parallel."""
+        modelspecs: list[ModelSpec] = []
+        
+        with ThreadPoolExecutor(max_workers=self.workers) as executor:
+            future_to_deployment = {
+                executor.submit(self._generate_modelspec, dep, result): dep
+                for dep in deployments
+            }
+            
+            for future in as_completed(future_to_deployment):
+                deployment = future_to_deployment[future]
+                try:
+                    modelspec = future.result()
+                    modelspecs.append(modelspec)
+                except Exception as e:
+                    result.add_warning(
+                        f"Failed to process {deployment.namespace}/{deployment.name}: {e}"
+                    )
+        
+        return modelspecs
+    
+    def _generate_modelspec(
+        self,
+        deployment: InferenceDeployment,
+        result: ScanResult,
+    ) -> ModelSpec:
+        """Generate a ModelSpec for a single deployment."""
+        import time as _time
+        start_time = _time.time()
+        
+        logger.debug(f"Generating ModelSpec for {deployment.namespace}/{deployment.name}")
+        
+        # Initialize tracking flags
+        has_gpu_metrics = False
+        gpu_infos: list[GPUInfo] = []
+        warnings: list[str] = []
+        errors: list[str] = []
+        
+        # Collect GPU metrics if enabled
+        if self.enable_exec and deployment.gpu_count > 0:
+            for pod_name in deployment.pod_names[:1]:  # Just first pod for now
+                try:
+                    gpu_metrics = self.gpu_collector.collect(
+                        pod_name=pod_name,
+                        namespace=deployment.namespace,
+                    )
+                    if gpu_metrics:
+                        has_gpu_metrics = True
+                        gpu_infos.extend(
+                            self._convert_gpu_metrics(gpu_metrics, pod_name)
+                        )
+                except GPUMetricsUnavailableError as e:
+                    warnings.append(f"{deployment.name}: {e.reason or 'GPU metrics unavailable'}")
+                except Exception as e:
+                    warnings.append(f"{deployment.name}: GPU collection failed - {e}")
+        
+        # Parse framework-specific configuration
+        model_info, inference_config = self._parse_config(deployment)
+        
+        # Build endpoints
+        container_config = None
+        endpoints: list[Endpoint] = []
+        
+        if deployment.pod_names:
+            pods = self.k8s_client.list_pods(
+                namespace=deployment.namespace,
+                field_selector=f"metadata.name={deployment.pod_names[0]}",
+            )
+            if pods:
+                container_config = self.config_collector.collect_container_config(pods[0])
+                if container_config:
+                    endpoint_infos = self.config_collector.detect_endpoints(container_config)
+                    endpoints = [
+                        Endpoint(
+                            type=e.type,
+                            port=e.port,
+                            path=e.path,
+                            url=e.url,
+                        )
+                        for e in endpoint_infos
+                    ]
+        
+        # Build resource info
+        resource_info = ResourceInfo(
+            replicas=deployment.replicas,
+            gpus=gpu_infos,
+            gpu_memory_utilization=None,
+            cpu_request=deployment.cpu_request,
+            cpu_limit=container_config.cpu_limit if container_config else None,
+            memory_request=deployment.memory_request,
+            memory_limit=container_config.memory_limit if container_config else None,
+        )
+        
+        # Parse image tag
+        image = deployment.container_image or ""
+        image_parts = image.rsplit(":", 1)
+        image_tag = image_parts[1] if len(image_parts) > 1 else None
+        
+        # Collect runtime metrics via vLLM API
+        runtime_state: Optional[RuntimeState] = None
+        has_runtime_metrics = False
+        
+        if self.enable_runtime_collection and deployment.framework == "vllm":
+            for pod_name in deployment.pod_names[:1]:
+                try:
+                    service_info = discover_vllm_service(
+                        self.k8s_client,
+                        deployment.namespace,
+                        pod_name,
+                    )
+                    if service_info:
+                        access_method, port = service_info
+                        
+                        # Choose appropriate API client based on access method
+                        if access_method == "kubectl-exec":
+                            api_client = KubectlExecVLLMClient(
+                                k8s_client=self.k8s_client,
+                                namespace=deployment.namespace,
+                                pod_name=pod_name,
+                                port=port,
+                                timeout=self.timeout,
+                            )
+                            collection_method = "vllm-api-kubectl-exec"
+                        else:
+                            # Direct HTTP access
+                            api_client = VLLMAPIClient(access_method, timeout=self.timeout)
+                            collection_method = "vllm-api"
+                        
+                        vllm_metrics = api_client.get_runtime_metrics()
+                        
+                        if vllm_metrics.api_available:
+                            has_runtime_metrics = True
+                            runtime_state = RuntimeState(
+                                collection_method=collection_method,
+                                vllm=VLLMRuntimeState(
+                                    loaded_model=vllm_metrics.loaded_model,
+                                    requests_running=vllm_metrics.requests.running,
+                                    requests_waiting=vllm_metrics.requests.waiting,
+                                    requests_swapped=vllm_metrics.requests.swapped,
+                                    ttft_p50=vllm_metrics.latency.ttft_p50,
+                                    ttft_p95=vllm_metrics.latency.ttft_p95,
+                                    ttft_p99=vllm_metrics.latency.ttft_p99,
+                                    tpot_p50=vllm_metrics.latency.tpot_p50,
+                                    tpot_p95=vllm_metrics.latency.tpot_p95,
+                                    e2e_p50=vllm_metrics.latency.e2e_p50,
+                                    e2e_p95=vllm_metrics.latency.e2e_p95,
+                                    e2e_p99=vllm_metrics.latency.e2e_p99,
+                                    prompt_tokens_per_sec=vllm_metrics.throughput.prompt_tokens_per_second,
+                                    generation_tokens_per_sec=vllm_metrics.throughput.generation_tokens_per_second,
+                                    prompt_tokens_total=vllm_metrics.throughput.prompt_tokens_total,
+                                    generation_tokens_total=vllm_metrics.throughput.generation_tokens_total,
+                                    gpu_cache_usage_percent=vllm_metrics.cache.gpu_cache_usage_percent,
+                                    cpu_cache_usage_percent=vllm_metrics.cache.cpu_cache_usage_percent,
+                                    prefix_cache_hit_rate=vllm_metrics.cache.prefix_cache_hit_rate,
+                                    api_available=True,
+                                    health_status=vllm_metrics.health_status,
+                                    collection_timestamp=vllm_metrics.collection_timestamp.isoformat() + "Z",
+                                ),
+                            )
+                        else:
+                            warnings.append(f"{deployment.name}: vLLM API not available")
+                    else:
+                        warnings.append(f"{deployment.name}: Could not discover vLLM service endpoint")
+                except Exception as e:
+                    warnings.append(f"{deployment.name}: Runtime metrics collection failed - {e}")
+        
+        # Calculate duration
+        duration_seconds = _time.time() - start_time
+        if duration_seconds < 1:
+            duration_str = f"{duration_seconds * 1000:.0f}ms"
+        else:
+            duration_str = f"{duration_seconds:.2f}s"
+        
+        # Build ModelSpec
+        modelspec = ModelSpec(
+            metadata=MetadataInfo(
+                name=deployment.name,
+                namespace=deployment.namespace,
+                labels=deployment.labels,
+                annotations={},
+                collection_timestamp=datetime.utcnow().isoformat() + "Z",
+                collector_version=__version__,
+            ),
+            model=model_info,
+            engine=EngineInfo(
+                name=deployment.framework,
+                version=None,
+                framework=None,
+                detection_confidence=deployment.confidence,
+            ),
+            inference=inference_config,
+            resources=resource_info,
+            endpoints=endpoints,
+            kubernetes=KubernetesMetadata(
+                deployment_type=deployment.deployment_type,
+                cluster_name=self.k8s_client.cluster_name,
+                creation_timestamp=None,
+                image=image,
+                image_tag=image_tag,
+            ),
+            runtime_state=runtime_state,
+            collection=CollectionMetadata(
+                mode="incluster" if self.k8s_client.context == "in-cluster" else "remote",
+                duration=duration_str,
+                warnings=warnings,
+                errors=errors,
+                data_completeness=DataCompleteness(
+                    static_config=True,
+                    gpu_metrics=has_gpu_metrics,
+                    runtime_metrics=has_runtime_metrics,
+                ),
+            ),
+        )
+        
+        return modelspec
+    
+    def _parse_config(
+        self,
+        deployment: InferenceDeployment,
+    ) -> tuple[ModelInfo, InferenceConfig]:
+        """Parse configuration based on detected framework."""
+        if deployment.framework == "vllm":
+            vllm_config = self.vllm_collector.collect(
+                env_vars=deployment.env_vars,
+                container_args=deployment.container_args,
+            )
+            model_info = self.vllm_parser.parse_model_info(vllm_config)
+            inference_config = self.vllm_parser.parse_inference_config(vllm_config)
+            return model_info, inference_config
+        
+        # Unknown framework - return minimal info
+        return (
+            ModelInfo(
+                name=None,
+                source=None,
+                confidence=0.0,
+                identification_method="none",
+            ),
+            InferenceConfig(),
+        )
+    
+    def _convert_gpu_metrics(
+        self,
+        metrics: list[GPUMetrics],
+        pod_name: str,
+    ) -> list[GPUInfo]:
+        """Convert GPU metrics to GPUInfo models."""
+        return [
+            GPUInfo(
+                index=m.gpu_index,
+                type=m.gpu_model,
+                memory_total=m.to_memory_str(m.memory_total_mb),
+                memory_used=m.to_memory_str(m.memory_used_mb) if m.memory_used_mb else None,
+                utilization=m.utilization_percent if m.utilization_percent else None,
+                temperature=m.temperature_celsius if m.temperature_celsius else None,
+                power_draw=m.power_draw_watts if m.power_draw_watts else None,
+                pod_name=pod_name,
+            )
+            for m in metrics
+        ]

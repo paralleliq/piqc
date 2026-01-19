@@ -1,0 +1,37 @@
+ModelSpec Introspector v1.0.0
+========================================
+
+[INFO] Connecting to cluster...
+[01/12/26 22:07:20] DEBUG    Loaded kubeconfig from: /home/ammarkhan2264388/.kube/config                                                                                      k8s_client.py:139
+                    DEBUG    Kubernetes client initialized for context: gke_piqc-483417_us-central1-a_piqc-test                                                                k8s_client.py:91
+[01/12/26 22:07:21] DEBUG    Cluster connection test successful                                                                                                               k8s_client.py:173
+       Context: gke_piqc-483417_us-central1-a_piqc-test
+       Cluster: gke_piqc-483417_us-central1-a_piqc-test
+
+[INFO] Scanning namespaces...
+                    INFO     Scanning 1 namespace(s)                                                                                                                        orchestrator.py:142
+                    DEBUG    Scanning namespace: inference                                                                                                                  orchestrator.py:176
+                    DEBUG    Found 1 pods in inference                                                                                                                        k8s_client.py:390
+                    INFO     Found 1 inference deployment(s)                                                                                                                orchestrator.py:158
+                    DEBUG    Generating ModelSpec for inference/vllm-tinyllama                                                                                              orchestrator.py:251
+[01/12/26 22:07:22] DEBUG    Executed command in inference/vllm-tinyllama-78c597864f-t24m7                                                                                    k8s_client.py:468
+                    DEBUG    Found 1 pods in inference                                                                                                                        k8s_client.py:390
+       Discovered: 1 namespace(s)
+
+[INFO] Detecting inference workloads...
+       Pods analyzed: 1
+       Inference deployments found: 1
+
+Framework Distribution:
+  - vllm        :   1 deployment(s) (100%)
+
+
+                          Discovered Inference Deployments                           
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━┓
+┃ Model Name                ┃ Engine ┃ GPU Type   ┃ Replicas ┃ GPU Util ┃ Namespace ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━┩
+│ TinyLlama/TinyLlama-1.... │ vllm   │ 1xTesla T4 │        1 │      N/A │ inference │
+└───────────────────────────┴────────┴────────────┴──────────┴──────────┴───────────┘
+
+
+[INFO] Scan completed in 952ms

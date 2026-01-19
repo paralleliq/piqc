@@ -1,0 +1,13 @@
+ModelSpec Introspector v1.0.0
+========================================
+
+[INFO] Testing cluster connection...
+
+Connection successful
+
+Context: gke_piqc-483417_us-central1-a_piqc-test
+Cluster: gke_piqc-483417_us-central1-a_piqc-test
+[INFO] Testing namespace access...
+       Accessible namespaces: 10
+
+All checks passed

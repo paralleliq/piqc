@@ -1,0 +1,83 @@
+# Example: vLLM Deployment ModelSpec
+
+apiVersion: modelspec.paralleliq.ai/v1
+kind: ModelSpec
+
+metadata:
+  name: llama-70b-chat
+  namespace: inference
+  labels:
+    app: llama-chat
+    team: ml-platform
+  collectionTimestamp: "2024-01-15T10:30:45Z"
+  collectorVersion: "1.0.0"
+
+model:
+  name: meta-llama/Llama-2-70b-chat-hf
+  servedName: llama-70b
+  source: huggingface
+  sourcePath: meta-llama/Llama-2-70b-chat-hf
+  architecture: llama
+  parameters: "70B"
+  confidence: 0.95
+  identificationMethod: cli_args
+
+engine:
+  name: vllm
+  version: "0.2.0"
+  detectionConfidence: 0.95
+
+inference:
+  precision: bfloat16
+  maxModelLen: 4096
+  maxBatchTokens: 16384
+  maxSequences: 256
+  tensorParallelSize: 8
+  pipelineParallelSize: 1
+
+resources:
+  replicas: 3
+  gpus:
+    - index: 0
+      type: A100-SXM4-80GB
+      memoryTotal: "80GB"
+      memoryUsed: "72GB"
+      utilization: 87
+      temperature: 72
+      powerDraw: 320
+      podName: llama-70b-chat-5f8b9c-abc12
+    - index: 1
+      type: A100-SXM4-80GB
+      memoryTotal: "80GB"
+      memoryUsed: "71GB"
+      utilization: 85
+      temperature: 70
+      powerDraw: 315
+      podName: llama-70b-chat-5f8b9c-abc12
+  gpuMemoryUtilization: 0.9
+  cpuRequest: "8"
+  cpuLimit: "16"
+  memoryRequest: "64Gi"
+  memoryLimit: "128Gi"
+
+endpoints:
+  - type: http
+    port: 8000
+    path: /v1/completions
+
+kubernetes:
+  deploymentType: Deployment
+  clusterName: prod-ml-cluster
+  creationTimestamp: "2024-01-10T08:00:00Z"
+  image: vllm/vllm-openai:v0.2.0
+  imageTag: v0.2.0
+
+collection:
+  mode: remote
+  duration: "2.34s"
+  warnings: []
+  errors: []
+  dataCompleteness:
+    staticConfig: true
+    gpuMetrics: true
+    runtimeMetrics: false

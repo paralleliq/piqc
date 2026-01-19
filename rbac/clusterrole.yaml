@@ -1,0 +1,57 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: piqc
+  labels:
+    app.kubernetes.io/name: piqc
+    app.kubernetes.io/part-of: piqc
+rules:
+  # Core API - Pods
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  
+  # Core API - Pod logs (optional, for enhanced detection)
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  
+  # Core API - Pod exec (required for GPU metrics)
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  
+  # Core API - Namespaces
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+  
+  # Core API - Services (for endpoint detection)
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list"]
+  
+  # Core API - Nodes (for node info)
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+  
+  # Apps API - Deployments
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+  
+  # Apps API - StatefulSets
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list"]
+  
+  # Apps API - DaemonSets
+  - apiGroups: ["apps"]
+    resources: ["daemonsets"]
+    verbs: ["get", "list"]
+  
+  # Apps API - ReplicaSets (for deployment owner detection)
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list"]

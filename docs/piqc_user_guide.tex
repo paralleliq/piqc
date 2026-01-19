@@ -1,0 +1,752 @@
+\documentclass[11pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{booktabs}
+
+% Page geometry
+\geometry{margin=1in}
+
+% Colors
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+\definecolor{linkblue}{rgb}{0.1,0.3,0.6}
+
+% Code listings style
+\lstdefinestyle{bashstyle}{
+    backgroundcolor=\color{backcolour},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    framerule=0.5pt,
+    numbers=none,
+    commentstyle=\color{codegreen},
+}
+\lstset{style=bashstyle}
+
+% Header/Footer
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{PIQC User Guide}
+\lhead{v1.0.0}
+\rfoot{Page \thepage}
+
+% Hyperref setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=linkblue,
+    urlcolor=linkblue,
+    pdftitle={PIQC User Guide},
+    pdfauthor={ParallelIQ},
+}
+
+\begin{document}
+
+% Title Page
+\begin{center}
+    {\Huge\textbf{PIQC User Guide}}\\[0.5em]
+    {\Large Production Inference Quality Control}\\[2em]
+    {\large Version 1.0.0}\\[1em]
+    \today
+\end{center}
+
+\vspace{2em}
+
+\begin{tcolorbox}[colback=blue!5,colframe=blue!50!black,title=\textbf{What is PIQC?}]
+\textbf{PIQC (Production Inference Quality Control)} is a Kubernetes-native tool that automatically discovers and documents AI/ML inference deployments running on your cluster.
+
+\textbf{Key Features:}
+\begin{itemize}
+    \item Automatic vLLM deployment discovery
+    \item GPU metrics collection (utilization, memory, temperature)
+    \item Runtime metrics from vLLM API (latency, throughput, cache)
+    \item Multiple output formats (YAML, JSON, Table)
+    \item Works remotely via kubectl or in-cluster
+\end{itemize}
+\end{tcolorbox}
+
+\newpage
+\tableofcontents
+\newpage
+
+%==============================================================================
+\section{Installation}
+%==============================================================================
+
+\subsection{Prerequisites}
+
+\begin{itemize}
+    \item Python 3.11 or higher
+    \item \texttt{kubectl} configured with cluster access
+    \item \texttt{poetry} (Python dependency manager)
+    \item Access to a Kubernetes cluster with vLLM deployments
+\end{itemize}
+
+%------------------------------------------------------------------------------
+\subsection{Download from GitHub}
+
+\begin{lstlisting}[language=bash]
+# Clone the repository
+git clone https://github.com/your-org/ModelSpec.git
+cd ModelSpec
+
+# Or download ZIP and extract
+# wget https://github.com/your-org/ModelSpec/archive/main.zip
+# unzip main.zip
+# cd ModelSpec-main
+\end{lstlisting}
+
+%------------------------------------------------------------------------------
+\subsection{Install Dependencies}
+
+PIQC uses Poetry for dependency management:
+
+\begin{lstlisting}[language=bash]
+# Install Poetry if not already installed
+curl -sSL https://install.python-poetry.org | python3 -
+
+# Install PIQC dependencies
+poetry install
+
+# Verify installation
+poetry run piqc version
+\end{lstlisting}
+
+\textbf{Expected output:}
+\begin{lstlisting}
+ModelSpec Introspector v1.0.0
+\end{lstlisting}
+
+%==============================================================================
+\section{Quick Start: Testing vLLM Deployments}
+%==============================================================================
+
+\subsection{Verify Cluster Access}
+
+\begin{lstlisting}[language=bash]
+# Test Kubernetes connection
+poetry run piqc test-connection
+\end{lstlisting}
+
+\textbf{Expected output:}
+\begin{lstlisting}
+[INFO] Connecting to cluster...
+       Context: my-k8s-cluster
+       Cluster: my-k8s-cluster
+[INFO] Connection successful!
+\end{lstlisting}
+
+%------------------------------------------------------------------------------
+\subsection{Scan for vLLM Deployments}
+
+\subsubsection{Basic Table View}
+
+\begin{lstlisting}[language=bash]
+# Scan all namespaces, show table output
+poetry run piqc scan --format table
+\end{lstlisting}
+
+\subsubsection{Scan Specific Namespace}
+
+\begin{lstlisting}[language=bash]
+# Scan only the 'inference' namespace
+poetry run piqc scan --namespace inference --format table
+\end{lstlisting}
+
+\subsubsection{Full YAML Output}
+
+\begin{lstlisting}[language=bash]
+# Generate detailed ModelSpec YAML
+poetry run piqc scan --namespace inference --format yaml
+\end{lstlisting}
+
+Files are saved to \texttt{./output/} by default.
+
+%------------------------------------------------------------------------------
+\subsection{Collect Runtime Metrics}
+
+To collect live vLLM API metrics (latency, throughput, cache):
+
+\begin{lstlisting}[language=bash]
+poetry run piqc scan --namespace inference \
+    --collect-runtime \
+    --format yaml \
+    -o ./my-output
+\end{lstlisting}
+
+\textbf{What you get:}
+\begin{itemize}
+    \item Request latency percentiles (TTFT, TPOT, E2E)
+    \item Throughput (tokens/sec)
+    \item KV cache usage
+    \item Prefix cache hit rates
+\end{itemize}
+
+%==============================================================================
+\section{Testing on Google Cloud Platform (GCP)}
+%==============================================================================
+
+\subsection{Option 1: Using Cloud Shell (Recommended)}
+
+Cloud Shell provides a pre-configured environment with \texttt{kubectl} and \texttt{python}.
+
+\subsubsection{Step 1: Open Cloud Shell}
+
+\begin{enumerate}
+    \item Go to \url{https://console.cloud.google.com}
+    \item Click the \textbf{Activate Cloud Shell} icon (top-right)
+    \item Wait for the terminal to load
+\end{enumerate}
+
+\subsubsection{Step 2: Set Up Your Project}
+
+\begin{lstlisting}[language=bash]
+# Check current project
+gcloud config get-value project
+
+# Set project if needed
+gcloud config set project YOUR_PROJECT_ID
+
+# Enable required APIs
+gcloud services enable container.googleapis.com
+gcloud services enable compute.googleapis.com
+\end{lstlisting}
+
+\subsubsection{Step 3: Create GKE Cluster with GPU}
+
+\begin{lstlisting}[language=bash,basicstyle=\ttfamily\footnotesize]
+gcloud container clusters create piqc-test \
+  --zone=us-central1-a \
+  --machine-type=n1-standard-4 \
+  --accelerator=type=nvidia-tesla-t4,count=1 \
+  --num-nodes=1 \
+  --spot \
+  --disk-size=50GB
+\end{lstlisting}
+
+\textbf{Cost:} \textasciitilde\$0.50/hour with Spot instances
+
+\subsubsection{Step 4: Install GPU Drivers}
+
+\begin{lstlisting}[language=bash,basicstyle=\ttfamily\footnotesize]
+kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/master/nvidia-driver-installer/cos/daemonset-preloaded.yaml
+
+# Wait for drivers to install (~2 minutes)
+kubectl get pods -n kube-system -w | grep nvidia
+\end{lstlisting}
+
+\subsubsection{Step 5: Deploy Test vLLM Server}
+
+\begin{lstlisting}[language=bash]
+# Create namespace
+kubectl create namespace inference
+
+# Deploy TinyLlama on vLLM
+cat << 'EOF' | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-tinyllama
+  namespace: inference
+  labels:
+    app: vllm-tinyllama
+    app.kubernetes.io/name: vllm
+    framework: vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-tinyllama
+  template:
+    metadata:
+      labels:
+        app: vllm-tinyllama
+        app.kubernetes.io/name: vllm
+        framework: vllm
+    spec:
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:v0.6.3.post1
+        args:
+          - "--model"
+          - "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+          - "--served-model-name"
+          - "tinyllama"
+          - "--dtype"
+          - "float16"
+          - "--max-model-len"
+          - "1024"
+          - "--gpu-memory-utilization"
+          - "0.5"
+        ports:
+          - containerPort: 8000
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+            cpu: "2"
+            memory: "8Gi"
+          limits:
+            nvidia.com/gpu: 1
+            cpu: "4"
+            memory: "12Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-tinyllama
+  namespace: inference
+spec:
+  selector:
+    app: vllm-tinyllama
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP
+EOF
+
+# Wait for pod to be ready (~3-5 minutes)
+kubectl get pods -n inference -w
+\end{lstlisting}
+
+\subsubsection{Step 6: Upload PIQC to Cloud Shell}
+
+\textbf{Method A: Clone from GitHub}
+\begin{lstlisting}[language=bash]
+cd ~
+git clone https://github.com/your-org/ModelSpec.git
+cd ModelSpec
+poetry install
+\end{lstlisting}
+
+\textbf{Method B: Upload ZIP File}
+\begin{enumerate}
+    \item Create ZIP on your local machine: \texttt{ModelSpec.zip}
+    \item In Cloud Shell, click \textbf{⋮} menu → \textbf{Upload}
+    \item Select \texttt{ModelSpec.zip}
+    \item Extract and install:
+\end{enumerate}
+
+\begin{lstlisting}[language=bash]
+cd ~
+unzip ModelSpec.zip
+cd ModelSpec
+poetry install
+\end{lstlisting}
+
+\subsubsection{Step 7: Apply RBAC Permissions}
+
+\begin{lstlisting}[language=bash]
+cd ~/ModelSpec
+kubectl apply -f rbac/
+\end{lstlisting}
+
+This grants PIQC permission to exec into pods and list cluster resources.
+
+\subsubsection{Step 8: Run PIQC Tests}
+
+\begin{lstlisting}[language=bash]
+# Basic scan
+poetry run piqc scan --namespace inference --format table
+
+# Full scan with runtime metrics
+poetry run piqc scan --namespace inference \
+    --collect-runtime \
+    --format yaml \
+    -o ~/piqc-outputs
+
+# View generated file
+cat ~/piqc-outputs/inference_vllm-tinyllama.yaml
+\end{lstlisting}
+
+\subsubsection{Step 9: Download Results}
+
+\begin{lstlisting}[language=bash]
+# Create ZIP of outputs
+cd ~
+zip -r piqc-outputs.zip piqc-outputs/
+
+# Download via Cloud Shell menu
+# Click ⋮ → Download → enter "piqc-outputs.zip"
+\end{lstlisting}
+
+\subsubsection{Step 10: Cleanup (Important!)}
+
+\begin{lstlisting}[language=bash]
+# Delete vLLM deployment
+kubectl delete deployment vllm-tinyllama -n inference
+
+# Delete cluster to stop charges
+gcloud container clusters delete piqc-test \
+  --zone=us-central1-a \
+  --quiet
+\end{lstlisting}
+
+%==============================================================================
+\section{Using PIQC from Your Local Machine}
+%==============================================================================
+
+PIQC can also run from your laptop/workstation using an existing kubeconfig.
+
+\subsection{Prerequisites}
+
+\begin{itemize}
+    \item Python 3.11+
+    \item \texttt{kubectl} installed and configured
+    \item Valid kubeconfig with cluster access
+    \item Poetry installed
+\end{itemize}
+
+%------------------------------------------------------------------------------
+\subsection{Windows Setup}
+
+\subsubsection{Install Python}
+
+Download Python 3.11+ from \url{https://www.python.org/downloads/}
+
+\subsubsection{Install kubectl}
+
+\begin{lstlisting}[language=bash]
+# Using Chocolatey
+choco install kubernetes-cli
+
+# Or download from https://kubernetes.io/docs/tasks/tools/
+\end{lstlisting}
+
+\subsubsection{Install Poetry}
+
+\begin{lstlisting}[language=bash]
+# PowerShell
+(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | python -
+\end{lstlisting}
+
+Add to PATH: \texttt{C:\textbackslash Users\textbackslash <YourName>\textbackslash AppData\textbackslash Roaming\textbackslash Python\textbackslash Scripts}
+
+\subsubsection{Configure kubectl}
+
+Option 1: Download kubeconfig from GKE
+\begin{lstlisting}[language=bash]
+gcloud container clusters get-credentials CLUSTER_NAME \
+  --zone=ZONE \
+  --project=PROJECT_ID
+\end{lstlisting}
+
+Option 2: Use provided kubeconfig file
+\begin{lstlisting}[language=bash]
+# Save kubeconfig to specific location
+$env:KUBECONFIG = "C:\path\to\kubeconfig.yaml"
+kubectl get nodes
+\end{lstlisting}
+
+\subsubsection{Install and Run PIQC}
+
+\begin{lstlisting}[language=bash]
+# Clone repository
+cd C:\Users\YourName\Desktop
+git clone https://github.com/your-org/ModelSpec.git
+cd ModelSpec
+
+# Install dependencies
+poetry install
+
+# Test connection
+poetry run piqc test-connection
+
+# Run scan
+poetry run piqc scan --namespace inference \
+  --collect-runtime \
+  --format yaml \
+  -o C:\Users\YourName\Desktop\piqc-outputs
+\end{lstlisting}
+
+%------------------------------------------------------------------------------
+\subsection{Linux/macOS Setup}
+
+\subsubsection{Install Prerequisites}
+
+\begin{lstlisting}[language=bash]
+# macOS (using Homebrew)
+brew install python@3.11
+brew install kubectl
+
+# Ubuntu/Debian
+sudo apt update
+sudo apt install python3.11 python3-pip kubectl
+
+# Install Poetry
+curl -sSL https://install.python-poetry.org | python3 -
+\end{lstlisting}
+
+\subsubsection{Configure kubectl}
+
+\begin{lstlisting}[language=bash]
+# Get credentials from GKE
+gcloud container clusters get-credentials CLUSTER_NAME \
+  --zone=ZONE \
+  --project=PROJECT_ID
+
+# Or set custom kubeconfig
+export KUBECONFIG=/path/to/kubeconfig.yaml
+kubectl get nodes
+\end{lstlisting}
+
+\subsubsection{Install and Run PIQC}
+
+\begin{lstlisting}[language=bash]
+# Clone repository
+cd ~/Desktop
+git clone https://github.com/your-org/ModelSpec.git
+cd ModelSpec
+
+# Install dependencies
+poetry install
+
+# Run scan
+poetry run piqc scan --namespace inference \
+  --collect-runtime \
+  --format yaml \
+  -o ~/piqc-outputs
+\end{lstlisting}
+
+%==============================================================================
+\section{Command Reference}
+%==============================================================================
+
+\subsection{Core Commands}
+
+\begin{table}[h]
+\small
+\begin{tabular}{@{}p{4cm}p{9cm}@{}}
+\toprule
+\textbf{Command} & \textbf{Description} \\
+\midrule
+\texttt{piqc version} & Show version information \\
+\texttt{piqc test-connection} & Verify cluster connectivity \\
+\texttt{piqc scan} & Scan cluster for vLLM deployments \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Scan Options}
+
+\begin{table}[h]
+\small
+\begin{tabular}{@{}p{5cm}p{8cm}@{}}
+\toprule
+\textbf{Option} & \textbf{Description} \\
+\midrule
+\texttt{--namespace, -n} & Scan specific namespace(s) \\
+\texttt{--format, -f} & Output format: table, yaml, json \\
+\texttt{--output, -o} & Output directory \\
+\texttt{--collect-runtime} & Collect vLLM API runtime metrics \\
+\texttt{--no-exec} & Skip GPU metrics (faster) \\
+\texttt{--verbose, -v} & Enable verbose logging \\
+\texttt{--debug} & Enable debug logging \\
+\texttt{--workers} & Number of parallel workers \\
+\texttt{--combined} & Output single combined file \\
+\texttt{--output-piqc} & Generate PIQC facts bundle \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Example Commands}
+
+\begin{lstlisting}[language=bash,basicstyle=\ttfamily\footnotesize]
+# Quick table view of all deployments
+poetry run piqc scan --format table
+
+# Detailed YAML for specific namespace
+poetry run piqc scan --namespace prod --format yaml
+
+# Full scan with runtime metrics
+poetry run piqc scan --namespace inference \
+  --collect-runtime \
+  --format yaml \
+  -o ./results
+
+# Fast scan without GPU metrics
+poetry run piqc scan --no-exec --format json
+
+# Debug mode for troubleshooting
+poetry run piqc scan --namespace test --debug
+
+# Generate ParallelIQ facts bundle
+poetry run piqc scan --namespace inference \
+  --output-piqc \
+  -o ./piqc-facts
+\end{lstlisting}
+
+%==============================================================================
+\section{Output Formats}
+%==============================================================================
+
+\subsection{Table Format}
+
+Quick visual overview of discovered deployments:
+
+\begin{lstlisting}[basicstyle=\ttfamily\tiny]
+┏━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Model Name           ┃ Engine ┃ GPU Type   ┃ Replicas ┃ GPU Util ┃
+┡━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━┩
+│ TinyLlama-1.1B-...   │ vllm   │ 1xTesla T4 │        1 │      15% │
+└──────────────────────┴────────┴────────────┴──────────┴──────────┘
+\end{lstlisting}
+
+\subsection{YAML Format}
+
+Complete ModelSpec with all collected data:
+
+\begin{lstlisting}[language=yaml,basicstyle=\ttfamily\scriptsize]
+apiVersion: modelspec.paralleliq.ai/v1
+kind: ModelSpec
+metadata:
+  name: vllm-tinyllama
+  namespace: inference
+model:
+  name: TinyLlama/TinyLlama-1.1B-Chat-v1.0
+  architecture: llama
+  parameters: 1.1B
+resources:
+  gpus:
+  - type: Tesla T4
+    memoryTotal: 15GB
+    temperature: 55
+runtimeState:
+  vllm:
+    loadedModel: tinyllama
+    healthStatus: healthy
+    promptTokensPerSec: 1250.5
+\end{lstlisting}
+
+\subsection{JSON Format}
+
+Machine-readable format for automation:
+
+\begin{lstlisting}[language=json,basicstyle=\ttfamily\scriptsize]
+{
+  "apiVersion": "modelspec.paralleliq.ai/v1",
+  "kind": "ModelSpec",
+  "metadata": {
+    "name": "vllm-tinyllama",
+    "namespace": "inference"
+  },
+  "model": {
+    "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+  }
+}
+\end{lstlisting}
+
+\subsection{PIQC Facts Bundle}
+
+Standardized facts format for ParallelIQ platform:
+
+\begin{lstlisting}[language=json,basicstyle=\ttfamily\scriptsize]
+{
+  "schema": "piqc-scan.v0.1",
+  "workloadObjects": [
+    {
+      "id": "inference/vllm-tinyllama",
+      "facts": {
+        "runtime.engineType": "vllm",
+        "model.name": "TinyLlama-1.1B-Chat-v1.0",
+        "hardware.gpuType": "Tesla T4"
+      }
+    }
+  ]
+}
+\end{lstlisting}
+
+%==============================================================================
+\section{Troubleshooting}
+%==============================================================================
+
+\subsection{Common Issues}
+
+\subsubsection{Connection Errors}
+
+\textbf{Error:} \texttt{Unable to connect to cluster}
+
+\textbf{Solution:}
+\begin{lstlisting}[language=bash]
+# Verify kubectl works
+kubectl get nodes
+
+# Check current context
+kubectl config current-context
+
+# Switch context if needed
+kubectl config use-context my-cluster
+\end{lstlisting}
+
+\subsubsection{RBAC Permission Errors}
+
+\textbf{Error:} \texttt{User cannot list pods in namespace}
+
+\textbf{Solution:}
+\begin{lstlisting}[language=bash]
+# Apply RBAC permissions
+kubectl apply -f rbac/
+
+# Or ask admin to grant cluster-viewer role
+\end{lstlisting}
+
+\subsubsection{GPU Metrics Not Available}
+
+\textbf{Error:} \texttt{nvidia-smi: command not found}
+
+\textbf{Solution:}
+\begin{itemize}
+    \item Install GPU drivers in cluster
+    \item Or use \texttt{--no-exec} flag to skip GPU metrics
+\end{itemize}
+
+\subsubsection{Runtime Metrics Not Collected}
+
+\textbf{Error:} \texttt{Could not discover vLLM service endpoint}
+
+\textbf{Solution:}
+\begin{itemize}
+    \item Verify vLLM pod is running: \texttt{kubectl get pods -n <namespace>}
+    \item Check vLLM is serving on port 8000
+    \item Ensure RBAC allows pod exec
+\end{itemize}
+
+\subsection{Debug Mode}
+
+For detailed troubleshooting:
+
+\begin{lstlisting}[language=bash]
+poetry run piqc scan --namespace inference --debug
+\end{lstlisting}
+
+\subsection{Getting Help}
+
+\begin{itemize}
+    \item GitHub Issues: \url{https://github.com/your-org/ModelSpec/issues}
+    \item Documentation: \url{https://your-org.github.io/ModelSpec}
+    \item Email: support@paralleliq.ai
+\end{itemize}
+
+%==============================================================================
+\section{Best Practices}
+%==============================================================================
+
+\begin{enumerate}
+    \item \textbf{Regular Scanning}: Run PIQC scans regularly to track deployment changes
+    \item \textbf{Use Namespaces}: Scan specific namespaces for faster results
+    \item \textbf{Collect Runtime Metrics}: Use \texttt{--collect-runtime} for production monitoring
+    \item \textbf{Save Outputs}: Always use \texttt{-o} flag to save results
+    \item \textbf{Version Control}: Store ModelSpec files in version control
+    \item \textbf{Automate}: Integrate PIQC into CI/CD pipelines
+\end{enumerate}
+
+\end{document}

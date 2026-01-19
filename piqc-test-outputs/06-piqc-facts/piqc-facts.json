@@ -1,0 +1,275 @@
+{
+  "schemaVersion": "piqc-scan.v0.1",
+  "generatedAt": "2026-01-12T22:06:46.460088Z",
+  "tool": {
+    "name": "piqc",
+    "version": "1.0.0"
+  },
+  "cluster": {
+    "context": "gke_piqc-483417_us-central1-a_piqc-test",
+    "name": "gke_piqc-483417_us-central1-a_piqc-test"
+  },
+  "scope": {
+    "namespaces": [
+      "inference"
+    ]
+  },
+  "objects": [
+    {
+      "workloadId": "ns/inference/deployment/vllm-tinyllama",
+      "kind": "Deployment",
+      "name": "vllm-tinyllama",
+      "namespace": "inference",
+      "images": [
+        "vllm/vllm-openai:v0.6.3.post1"
+      ],
+      "facts": {
+        "runtime.engineType": {
+          "value": "vllm",
+          "source": {
+            "type": "scanner",
+            "method": "framework_detection"
+          },
+          "dataConfidence": "medium",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        },
+        "runtime.engineVersion": {
+          "value": "v0.6.3.post1",
+          "source": {
+            "type": "k8s_api",
+            "method": "container_image_tag"
+          },
+          "dataConfidence": "medium",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        },
+        "vllm.dtype": {
+          "value": "float16",
+          "source": {
+            "type": "k8s_api",
+            "method": "container_args"
+          },
+          "dataConfidence": "high",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        },
+        "vllm.maxModelLen": {
+          "value": 1024,
+          "source": {
+            "type": "k8s_api",
+            "method": "container_args"
+          },
+          "dataConfidence": "high",
+          "observedAt": "2026-01-12T22:06:46.460088Z",
+          "units": "tokens"
+        },
+        "model.maxModelLen": {
+          "value": 1024,
+          "source": {
+            "type": "k8s_api",
+            "method": "container_args"
+          },
+          "dataConfidence": "high",
+          "observedAt": "2026-01-12T22:06:46.460088Z",
+          "units": "tokens"
+        },
+        "runtime.dtype": {
+          "value": "float16",
+          "source": {
+            "type": "k8s_api",
+            "method": "container_args"
+          },
+          "dataConfidence": "high",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        },
+        "hardware.gpuCount": {
+          "value": 1,
+          "source": {
+            "type": "k8s_api",
+            "method": "pod_resources"
+          },
+          "dataConfidence": "high",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        },
+        "hardware.gpuType": {
+          "value": "Tesla T4",
+          "source": {
+            "type": "pod_exec",
+            "method": "nvidia-smi",
+            "ref": "vllm-tinyllama-78c597864f-t24m7"
+          },
+          "dataConfidence": "high",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        },
+        "hardware.gpuMemoryGB": {
+          "value": 15.0,
+          "source": {
+            "type": "pod_exec",
+            "method": "nvidia-smi",
+            "ref": "vllm-tinyllama-78c597864f-t24m7"
+          },
+          "dataConfidence": "high",
+          "observedAt": "2026-01-12T22:06:46.460088Z",
+          "units": "GB"
+        },
+        "hardware.supportsFastBf16": {
+          "value": false,
+          "source": {
+            "type": "scanner",
+            "method": "gpu_capability_inference"
+          },
+          "dataConfidence": "medium",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        },
+        "obs.gpu.memUtilAvgPct": {
+          "value": 46.7,
+          "source": {
+            "type": "pod_exec",
+            "method": "nvidia-smi",
+            "ref": "vllm-tinyllama-78c597864f-t24m7"
+          },
+          "dataConfidence": "medium",
+          "observedAt": "2026-01-12T22:06:46.460088Z",
+          "units": "%"
+        },
+        "obs.gpu.temperatureC": {
+          "value": 56,
+          "source": {
+            "type": "pod_exec",
+            "method": "nvidia-smi"
+          },
+          "dataConfidence": "high",
+          "observedAt": "2026-01-12T22:06:46.460088Z",
+          "units": "C"
+        },
+        "obs.gpu.powerDrawW": {
+          "value": 28,
+          "source": {
+            "type": "pod_exec",
+            "method": "nvidia-smi"
+          },
+          "dataConfidence": "high",
+          "observedAt": "2026-01-12T22:06:46.460088Z",
+          "units": "W"
+        },
+        "model.name": {
+          "value": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+          "source": {
+            "type": "k8s_api",
+            "method": "cli"
+          },
+          "dataConfidence": "high",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        },
+        "model.architecture": {
+          "value": "llama",
+          "source": {
+            "type": "scanner",
+            "method": "model_name_inference"
+          },
+          "dataConfidence": "medium",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        },
+        "model.parameters": {
+          "value": "1.1B",
+          "source": {
+            "type": "scanner",
+            "method": "model_name_inference"
+          },
+          "dataConfidence": "medium",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        },
+        "model.parameterCount": {
+          "value": 1100000000,
+          "source": {
+            "type": "scanner",
+            "method": "model_name_inference"
+          },
+          "dataConfidence": "medium",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        },
+        "k8s.replicas": {
+          "value": 1,
+          "source": {
+            "type": "k8s_api",
+            "method": "deployment_spec"
+          },
+          "dataConfidence": "high",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        },
+        "k8s.cpuRequest": {
+          "value": "2",
+          "source": {
+            "type": "k8s_api",
+            "method": "pod_spec"
+          },
+          "dataConfidence": "high",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        },
+        "k8s.memoryRequest": {
+          "value": "8Gi",
+          "source": {
+            "type": "k8s_api",
+            "method": "pod_spec"
+          },
+          "dataConfidence": "high",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        },
+        "endpoint.httpPort": {
+          "value": 8000,
+          "source": {
+            "type": "k8s_api",
+            "method": "container_ports"
+          },
+          "dataConfidence": "high",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        },
+        "autoscaling.enabled": {
+          "value": false,
+          "source": {
+            "type": "scanner",
+            "method": "hpa_absence"
+          },
+          "dataConfidence": "high",
+          "observedAt": "2026-01-12T22:06:46.460088Z"
+        }
+      }
+    }
+  ],
+  "factErrors": [
+    {
+      "workloadId": "ns/inference/deployment/vllm-tinyllama",
+      "factKey": "vllm.maxNumSeqs",
+      "error": "Required fact 'vllm.maxNumSeqs' could not be collected",
+      "severity": "warning",
+      "source": {
+        "type": "scanner",
+        "method": "fact_validation"
+      },
+      "observedAt": "2026-01-12T22:06:46.460088Z"
+    },
+    {
+      "workloadId": "ns/inference/deployment/vllm-tinyllama",
+      "factKey": "vllm.tensorParallelSize",
+      "error": "Required fact 'vllm.tensorParallelSize' could not be collected",
+      "severity": "warning",
+      "source": {
+        "type": "scanner",
+        "method": "fact_validation"
+      },
+      "observedAt": "2026-01-12T22:06:46.460088Z"
+    },
+    {
+      "workloadId": "ns/inference/deployment/vllm-tinyllama",
+      "factKey": "obs.gpu.utilAvgPct",
+      "error": "Required fact 'obs.gpu.utilAvgPct' could not be collected",
+      "severity": "warning",
+      "source": {
+        "type": "scanner",
+        "method": "fact_validation"
+      },
+      "observedAt": "2026-01-12T22:06:46.460088Z"
+    }
+  ],
+  "notes": [
+    "Runtime metrics not collected. Use --collect-runtime for vLLM API metrics."
+  ]
+}

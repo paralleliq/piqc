@@ -1,0 +1,496 @@
+\documentclass[11pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{graphicx}
+\usepackage{tcolorbox}
+\usepackage{enumitem}
+
+% Page geometry
+\geometry{margin=1in}
+
+% Colors
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+\definecolor{tipblue}{rgb}{0.9,0.95,1}
+\definecolor{warnred}{rgb}{1,0.95,0.9}
+
+% Code listings style
+\lstdefinestyle{bashstyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{codepurple},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=none,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2,
+    frame=single,
+    framerule=0.5pt,
+}
+
+\lstdefinestyle{yamlstyle}{
+    backgroundcolor=\color{backcolour},
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    frame=single,
+    framerule=0.5pt,
+}
+
+\lstset{style=bashstyle}
+
+% Header/Footer
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{ModelSpec Introspector}
+\lhead{GCP Testing Guide}
+\rfoot{Page \thepage}
+
+% Hyperref setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+}
+
+\begin{document}
+
+% Title
+\begin{center}
+    {\LARGE\textbf{ModelSpec Introspector}}\\[0.5em]
+    {\Large GCP Testing Guide}\\[1em]
+    \textit{Estimated Total Cost: \$2--5 for complete feature testing}
+\end{center}
+
+\tableofcontents
+\newpage
+
+%==============================================================================
+\section{Recommended Model \& GPU Selection}
+%==============================================================================
+
+\subsection{Best Choice: TinyLlama-1.1B on T4 GPU}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Aspect} & \textbf{Recommendation} & \textbf{Why} \\
+\midrule
+Model & \texttt{TinyLlama/TinyLlama-1.1B-Chat-v1.0} & Only 2GB VRAM, fast inference \\
+GPU & NVIDIA T4 (16GB) & Cheapest GPU (\textasciitilde\$0.35/hr Spot) \\
+Machine & \texttt{n1-standard-4} & 4 vCPU, 15GB RAM \\
+Region & \texttt{us-central1-a} & Best availability \\
+\bottomrule
+\end{tabular}
+\caption{Recommended configuration for cost-effective testing}
+\end{table}
+
+\subsection{Alternative Models}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Model} & \textbf{Parameters} & \textbf{VRAM Needed} & \textbf{GPU Required} \\
+\midrule
+TinyLlama-1.1B & 1.1B & \textasciitilde2GB & T4 \checkmark \\
+Phi-2 & 2.7B & \textasciitilde6GB & T4 \checkmark \\
+Mistral-7B (INT4) & 7B & \textasciitilde8GB & T4 \checkmark \\
+Mistral-7B (FP16) & 7B & \textasciitilde16GB & L4 or A100 \\
+\bottomrule
+\end{tabular}
+\caption{Alternative model options}
+\end{table}
+
+%==============================================================================
+\section{GCP Setup (Step-by-Step)}
+%==============================================================================
+
+\subsection{Step 1: Enable APIs \& Set Project}
+
+\begin{lstlisting}[language=bash]
+# Set your project
+gcloud config set project YOUR_PROJECT_ID
+
+# Enable required APIs
+gcloud services enable container.googleapis.com
+gcloud services enable compute.googleapis.com
+\end{lstlisting}
+
+\subsection{Step 2: Create GKE Cluster with T4 GPU}
+
+\begin{lstlisting}[language=bash]
+# Create a minimal GKE cluster with Spot instances
+gcloud container clusters create modelspec-test \
+  --zone=us-central1-a \
+  --machine-type=n1-standard-4 \
+  --accelerator=type=nvidia-tesla-t4,count=1 \
+  --num-nodes=1 \
+  --spot \
+  --disk-size=50GB \
+  --enable-autoscaling \
+  --min-nodes=0 \
+  --max-nodes=1
+
+# Install NVIDIA GPU drivers
+kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/\
+container-engine-accelerators/master/nvidia-driver-installer/\
+cos/daemonset-preloaded.yaml
+
+# Get credentials
+gcloud container clusters get-credentials modelspec-test \
+  --zone=us-central1-a
+\end{lstlisting}
+
+\subsection{Step 3: Verify GPU is Available}
+
+\begin{lstlisting}[language=bash]
+# Wait ~2 minutes for driver installation, then:
+kubectl get nodes -o jsonpath='{.items[*].status.allocatable.nvidia\.com/gpu}'
+# Should output: 1
+\end{lstlisting}
+
+%==============================================================================
+\section{Deploy vLLM with TinyLlama}
+%==============================================================================
+
+\subsection{Create Namespace}
+
+\begin{lstlisting}[language=bash]
+kubectl create namespace inference
+\end{lstlisting}
+
+\subsection{Create vLLM Deployment}
+
+Save the following as \texttt{vllm-tinyllama.yaml}:
+
+\begin{lstlisting}[style=yamlstyle]
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-tinyllama
+  namespace: inference
+  labels:
+    app: vllm-tinyllama
+    app.kubernetes.io/name: vllm
+    framework: vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-tinyllama
+  template:
+    metadata:
+      labels:
+        app: vllm-tinyllama
+        app.kubernetes.io/name: vllm
+        framework: vllm
+    spec:
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:latest
+        args:
+          - "--model"
+          - "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+          - "--served-model-name"
+          - "tinyllama"
+          - "--dtype"
+          - "float16"
+          - "--max-model-len"
+          - "2048"
+          - "--tensor-parallel-size"
+          - "1"
+          - "--gpu-memory-utilization"
+          - "0.9"
+          - "--enable-prefix-caching"
+        ports:
+          - containerPort: 8000
+            name: http
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+            cpu: "2"
+            memory: "8Gi"
+          limits:
+            nvidia.com/gpu: 1
+            cpu: "4"
+            memory: "12Gi"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 180
+          periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-tinyllama
+  namespace: inference
+spec:
+  selector:
+    app: vllm-tinyllama
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+  type: ClusterIP
+\end{lstlisting}
+
+\subsection{Deploy and Verify}
+
+\begin{lstlisting}[language=bash]
+# Deploy
+kubectl apply -f vllm-tinyllama.yaml
+
+# Watch pod status (wait for Running)
+kubectl get pods -n inference -w
+
+# Check logs for model loading progress
+kubectl logs -n inference -l app=vllm-tinyllama -f
+
+# Port-forward to test
+kubectl port-forward -n inference svc/vllm-tinyllama 8000:8000 &
+
+# Test the API
+curl http://localhost:8000/v1/models
+curl http://localhost:8000/health
+curl http://localhost:8000/metrics | head -50
+\end{lstlisting}
+
+%==============================================================================
+\section{Install \& Test ModelSpec Introspector}
+%==============================================================================
+
+\subsection{Install the Tool}
+
+\begin{lstlisting}[language=bash]
+# Clone and install
+cd /path/to/ModelSpec
+poetry install
+
+# Or install directly
+pip install -e .
+\end{lstlisting}
+
+\subsection{Apply RBAC Permissions}
+
+\begin{lstlisting}[language=bash]
+kubectl apply -f rbac/
+\end{lstlisting}
+
+\subsection{Run the Tests}
+
+\subsubsection{Test 1: Connection Test}
+\begin{lstlisting}[language=bash]
+piqc test-connection
+\end{lstlisting}
+\textbf{Expected:} Connected to cluster
+
+\subsubsection{Test 2: Basic Scan (Table Output)}
+\begin{lstlisting}[language=bash]
+piqc scan --namespace inference
+\end{lstlisting}
+\textbf{Expected:} Table showing vllm-tinyllama deployment
+
+\subsubsection{Test 3: YAML Output}
+\begin{lstlisting}[language=bash]
+piqc scan --namespace inference --output yaml \
+  > output/test-modelspec.yaml
+\end{lstlisting}
+\textbf{Expected:} YAML file with complete ModelSpec
+
+\subsubsection{Test 4: JSON Output}
+\begin{lstlisting}[language=bash]
+piqc scan --namespace inference --output json \
+  > output/test-modelspec.json
+\end{lstlisting}
+
+\subsubsection{Test 5: PIQC Facts Bundle}
+\begin{lstlisting}[language=bash]
+piqc scan --namespace inference --output-piqc \
+  > output/piqc-facts.json
+\end{lstlisting}
+\textbf{Expected:} JSON with facts like \texttt{runtime.engineType}, \texttt{vllm.dtype}
+
+\subsubsection{Test 6: GPU Metrics Collection}
+\begin{lstlisting}[language=bash]
+piqc scan --namespace inference --output yaml -v
+\end{lstlisting}
+\textbf{Expected:} GPU info with utilization, memory, temperature
+
+\subsubsection{Test 7: Runtime Metrics (Prometheus)}
+\begin{lstlisting}[language=bash]
+piqc scan --namespace inference --collect-runtime \
+  --output yaml
+\end{lstlisting}
+\textbf{Expected:} \texttt{runtimeState} section with live metrics
+
+\subsubsection{Test 8: Multi-Namespace Scan}
+\begin{lstlisting}[language=bash]
+piqc scan --output yaml
+\end{lstlisting}
+\textbf{Expected:} Scans all namespaces, finds inference workloads
+
+\subsubsection{Test 9: Combined Output}
+\begin{lstlisting}[language=bash]
+piqc scan --combined --output yaml \
+  > output/all-modelspecs.yaml
+\end{lstlisting}
+
+%==============================================================================
+\section{Feature Verification Checklist}
+%==============================================================================
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Feature} & \textbf{How to Verify} & \textbf{CLI Flag} \\
+\midrule
+vLLM Detection & Check \texttt{engine.name: vllm} & Default \\
+Model Inference & Check \texttt{model.architecture: llama} & Default \\
+GPU Metrics & Check \texttt{resources.gpus[].utilization} & Default \\
+Precision Detection & Check \texttt{inference.precision: float16} & Default \\
+Max Model Len & Check \texttt{inference.maxModelLen: 2048} & Default \\
+Tensor Parallel & Check \texttt{inference.tensorParallelSize: 1} & Default \\
+Runtime Metrics & Check \texttt{runtimeState.vllm.gpuCacheUsagePercent} & \texttt{--collect-runtime} \\
+PIQC Facts & Check \texttt{runtime.engineType}, \texttt{hardware.gpuType} & \texttt{--output-piqc} \\
+Pod Labels & Check \texttt{metadata.labels} captured & Default \\
+Namespace Filter & Only scan specific namespace & \texttt{--namespace} \\
+\bottomrule
+\end{tabular}
+\caption{Feature verification checklist}
+\end{table}
+
+%==============================================================================
+\section{Cleanup (IMPORTANT -- Stop Charges!)}
+%==============================================================================
+
+\begin{tcolorbox}[colback=warnred,colframe=red!50!black,title=\textbf{Important: Cleanup to Stop Charges}]
+Always delete your cluster when testing is complete to avoid ongoing charges.
+\end{tcolorbox}
+
+\begin{lstlisting}[language=bash]
+# Delete the deployment first
+kubectl delete -f vllm-tinyllama.yaml
+
+# Delete the cluster (stops all charges)
+gcloud container clusters delete modelspec-test \
+  --zone=us-central1-a --quiet
+
+# Verify deletion
+gcloud container clusters list
+\end{lstlisting}
+
+%==============================================================================
+\section{Cost Breakdown}
+%==============================================================================
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Resource} & \textbf{Hourly Cost} & \textbf{For 2hr Test} \\
+\midrule
+T4 GPU (Spot) & \textasciitilde\$0.35 & \$0.70 \\
+n1-standard-4 (Spot) & \textasciitilde\$0.05 & \$0.10 \\
+GKE Management Fee & \textasciitilde\$0.10 & \$0.20 \\
+\midrule
+\textbf{Total} & & \textbf{\textasciitilde\$1--2} \\
+\bottomrule
+\end{tabular}
+\caption{Estimated testing costs}
+\end{table}
+
+\begin{tcolorbox}[colback=tipblue,colframe=blue!50!black,title=\textbf{Pro Tip}]
+Use the \texttt{--spot} flag when creating your cluster to save 60--70\% on GPU costs!
+\end{tcolorbox}
+
+%==============================================================================
+\section{Troubleshooting}
+%==============================================================================
+
+\subsection{Pod Stuck in Pending}
+\begin{lstlisting}[language=bash]
+kubectl describe pod -n inference -l app=vllm-tinyllama
+\end{lstlisting}
+Usually means GPU quota not available. Try a different zone.
+
+\subsection{GPU Driver Not Installing}
+\begin{lstlisting}[language=bash]
+kubectl logs -n kube-system -l k8s-app=nvidia-driver-installer
+\end{lstlisting}
+
+\subsection{Model Loading Timeout}
+The readiness probe has a 2-minute timeout. TinyLlama loads in approximately 1 minute.
+
+\subsection{Permission Denied Errors}
+\begin{lstlisting}[language=bash]
+kubectl apply -f rbac/
+\end{lstlisting}
+Ensure RBAC is applied before scanning.
+
+%==============================================================================
+\section{Quick Start (Copy-Paste Version)}
+%==============================================================================
+
+\begin{lstlisting}[language=bash]
+# 1. Create cluster
+gcloud container clusters create modelspec-test \
+  --zone=us-central1-a \
+  --machine-type=n1-standard-4 \
+  --accelerator=type=nvidia-tesla-t4,count=1 \
+  --num-nodes=1 --spot
+
+# 2. Install GPU drivers
+kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/\
+container-engine-accelerators/master/nvidia-driver-installer/\
+cos/daemonset-preloaded.yaml
+
+# 3. Get credentials
+gcloud container clusters get-credentials modelspec-test \
+  --zone=us-central1-a
+
+# 4. Create namespace and deploy
+kubectl create namespace inference
+kubectl apply -f vllm-tinyllama.yaml
+
+# 5. Wait for pod (2-3 minutes)
+kubectl wait --for=condition=ready pod -l app=vllm-tinyllama \
+  -n inference --timeout=300s
+
+# 6. Apply RBAC and scan
+kubectl apply -f rbac/
+piqc scan --namespace inference --output yaml
+
+# 7. CLEANUP (don't forget!)
+gcloud container clusters delete modelspec-test \
+  --zone=us-central1-a --quiet
+\end{lstlisting}
+
+\end{document}

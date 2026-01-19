@@ -1,0 +1,242 @@
+\documentclass[11pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{enumitem}
+
+% Page geometry
+\geometry{margin=1in}
+
+% Colors
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+\definecolor{infoблue}{rgb}{0.9,0.95,1}
+
+% Code listings style
+\lstdefinestyle{bashstyle}{
+    backgroundcolor=\color{backcolour},
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    frame=single,
+    framerule=0.5pt,
+}
+\lstset{style=bashstyle}
+
+% Header/Footer
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{PIQC Tool Testing}
+\lhead{GCP Permissions Request}
+\rfoot{Page \thepage}
+
+% Hyperref setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+}
+
+\begin{document}
+
+% Title
+\begin{center}
+    {\LARGE\textbf{GCP Permissions Request}}\\[0.5em]
+    {\Large For PIQC Tool Testing}\\[1em]
+    \textit{Date: January 11, 2026}
+\end{center}
+
+\vspace{1em}
+
+%==============================================================================
+\section{Overview}
+%==============================================================================
+
+We need to test the \textbf{PIQC (Production Inference Quality Control)} tool on your GCP environment. This tool discovers and documents AI/ML inference deployments running on Kubernetes.
+
+To complete the testing, we need certain GCP permissions or your assistance in setting up the test environment.
+
+%==============================================================================
+\section{Account Information}
+%==============================================================================
+
+\begin{tcolorbox}[colback=backcolour,colframe=black!50,title=\textbf{Account to Grant Access}]
+\textbf{Email:} \texttt{ammarkhan2264388@gmail.com}
+\end{tcolorbox}
+
+%==============================================================================
+\section{Option 1: Grant Editor Access (Recommended)}
+%==============================================================================
+
+The simplest approach is to grant \textbf{Editor} role to my account. This allows me to:
+\begin{itemize}
+    \item Enable required APIs
+    \item Create a test GKE cluster
+    \item Deploy test workloads
+    \item Run the PIQC tool
+    \item Delete resources after testing
+\end{itemize}
+
+\subsection{How to Grant Editor Access}
+
+\begin{enumerate}
+    \item Go to \textbf{IAM \& Admin} page:\\
+    \url{https://console.cloud.google.com/iam-admin/iam}
+    
+    \item Make sure you have the correct project selected in the top dropdown
+    
+    \item Click \textbf{"+ GRANT ACCESS"} button at the top
+    
+    \item In the \textbf{"New principals"} field, enter:\\
+    \texttt{ammarkhan2264388@gmail.com}
+    
+    \item In the \textbf{"Select a role"} dropdown, choose:\\
+    \texttt{Project > Editor}
+    
+    \item Click \textbf{"Save"}
+\end{enumerate}
+
+\begin{tcolorbox}[colback=backcolour,colframe=green!50!black,title=\textbf{After Granting Access}]
+Please notify me once access is granted, and provide the \textbf{Project ID} so I can proceed with testing.
+\end{tcolorbox}
+
+%==============================================================================
+\section{Option 2: Minimal Permissions (More Secure)}
+%==============================================================================
+
+If you prefer not to grant full Editor access, please grant these specific roles:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Role} & \textbf{Purpose} \\
+\midrule
+Kubernetes Engine Admin & Create/manage GKE clusters \\
+Compute Admin & Manage compute resources \\
+Service Usage Admin & Enable APIs \\
+\bottomrule
+\end{tabular}
+\caption{Minimum required roles for testing}
+\end{table}
+
+\subsection{How to Grant Multiple Roles}
+
+\begin{enumerate}
+    \item Go to: \url{https://console.cloud.google.com/iam-admin/iam}
+    \item Click \textbf{"+ GRANT ACCESS"}
+    \item Enter: \texttt{ammarkhan2264388@gmail.com}
+    \item Click \textbf{"+ ADD ANOTHER ROLE"} for each role
+    \item Add all three roles listed above
+    \item Click \textbf{"Save"}
+\end{enumerate}
+
+%==============================================================================
+\section{Option 3: You Set Up the Environment}
+%==============================================================================
+
+If you prefer to set up the environment yourself, please run the following commands in Google Cloud Shell (\url{https://shell.cloud.google.com}):
+
+\subsection{Step 1: Enable Required APIs}
+
+\begin{lstlisting}[language=bash]
+gcloud services enable container.googleapis.com
+gcloud services enable compute.googleapis.com
+\end{lstlisting}
+
+\subsection{Step 2: Create GKE Cluster with GPU}
+
+\begin{lstlisting}[language=bash]
+gcloud container clusters create piqc-test \
+  --zone=us-central1-a \
+  --machine-type=n1-standard-4 \
+  --accelerator=type=nvidia-tesla-t4,count=1 \
+  --num-nodes=1 \
+  --spot \
+  --disk-size=50GB
+\end{lstlisting}
+
+\subsection{Step 3: Install GPU Drivers}
+
+\begin{lstlisting}[language=bash]
+kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/master/nvidia-driver-installer/cos/daemonset-preloaded.yaml
+\end{lstlisting}
+
+\subsection{Step 4: Share Cluster Access with Me}
+
+\begin{lstlisting}[language=bash]
+# Export kubeconfig file
+kubectl config view --minify --flatten > piqc-kubeconfig.yaml
+\end{lstlisting}
+
+Send me the \texttt{piqc-kubeconfig.yaml} file securely, and I can test the PIQC tool from my machine.
+
+%==============================================================================
+\section{Estimated Costs}
+%==============================================================================
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Resource} & \textbf{Hourly Cost (Spot)} & \textbf{For 2hr Test} \\
+\midrule
+T4 GPU & \textasciitilde\$0.35 & \$0.70 \\
+n1-standard-4 & \textasciitilde\$0.05 & \$0.10 \\
+GKE Management & \textasciitilde\$0.10 & \$0.20 \\
+\midrule
+\textbf{Total} & & \textbf{\textasciitilde\$1-2} \\
+\bottomrule
+\end{tabular}
+\caption{Estimated testing costs using Spot instances}
+\end{table}
+
+\begin{tcolorbox}[colback=yellow!10,colframe=orange!50!black,title=\textbf{Important: Cleanup}]
+After testing is complete, I will delete the GKE cluster to stop all charges. 
+
+If you create the cluster yourself, please remember to delete it after we finish testing:
+\begin{lstlisting}[language=bash]
+gcloud container clusters delete piqc-test \
+  --zone=us-central1-a --quiet
+\end{lstlisting}
+\end{tcolorbox}
+
+%==============================================================================
+\section{Summary of What I Need}
+%==============================================================================
+
+Please choose one of these options:
+
+\begin{enumerate}[label=\textbf{\arabic*.}]
+    \item \textbf{Grant me Editor access} to the project (recommended, quickest)
+    \item \textbf{Grant minimal roles} (Kubernetes Engine Admin, Compute Admin, Service Usage Admin)
+    \item \textbf{Set up the cluster yourself} and share the kubeconfig file with me
+\end{enumerate}
+
+\vspace{1em}
+
+\begin{tcolorbox}[colback=blue!5,colframe=blue!50!black,title=\textbf{Information I Need From You}]
+\begin{itemize}
+    \item \textbf{GCP Project ID:} \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_
+    \item \textbf{Preferred Option:} 1 / 2 / 3 (circle one)
+    \item \textbf{Any specific zone preference?} (default: us-central1-a)
+\end{itemize}
+\end{tcolorbox}
+
+\vspace{2em}
+
+Thank you for your assistance. Please let me know if you have any questions.
+
+\vspace{2em}
+\noindent\textbf{Best regards,}\\
+\textit{[Your Name]}
+
+\end{document}

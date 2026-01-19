@@ -1,0 +1,116 @@
+# vLLM Llama-70B Deployment (Multi-GPU, Tensor Parallel)
+#
+# This manifest simulates a production-like vLLM deployment
+# with 8 GPUs using tensor parallelism.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inference
+  labels:
+    team: ml-platform
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-llama-70b
+  namespace: inference
+  labels:
+    app: vllm-llama-70b
+    app.kubernetes.io/name: vllm
+    app.kubernetes.io/component: inference-server
+    team: ml-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vllm-llama-70b
+  template:
+    metadata:
+      labels:
+        app: vllm-llama-70b
+        app.kubernetes.io/name: vllm
+        framework: vllm
+    spec:
+      containers:
+        - name: vllm
+          image: modelspec-test/vllm-mock:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "/app/server.py"]
+          env:
+            - name: VLLM_VERSION
+              value: "0.2.7"
+            - name: MODEL_NAME
+              value: "meta-llama/Llama-2-70b-chat-hf"
+            - name: SERVED_MODEL_NAME
+              value: "llama-70b"
+            - name: TENSOR_PARALLEL_SIZE
+              value: "8"
+            - name: PIPELINE_PARALLEL_SIZE
+              value: "1"
+            - name: DTYPE
+              value: "bfloat16"
+            - name: MAX_MODEL_LEN
+              value: "4096"
+            - name: MAX_NUM_BATCHED_TOKENS
+              value: "16384"
+            - name: MAX_NUM_SEQS
+              value: "256"
+            - name: GPU_MEMORY_UTILIZATION
+              value: "0.9"
+            # Fake GPU config
+            - name: FAKE_GPU_COUNT
+              value: "8"
+            - name: FAKE_GPU_MODEL
+              value: "A100-SXM4-80GB"
+            - name: FAKE_GPU_MEMORY_TOTAL
+              value: "81920"
+            - name: FAKE_GPU_MEMORY_USED
+              value: "72000"
+            - name: FAKE_GPU_UTILIZATION
+              value: "87"
+          args:
+            - "--model"
+            - "meta-llama/Llama-2-70b-chat-hf"
+            - "--served-model-name"
+            - "llama-70b"
+            - "--tensor-parallel-size"
+            - "8"
+            - "--dtype"
+            - "bfloat16"
+            - "--max-model-len"
+            - "4096"
+            - "--trust-remote-code"
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "8"
+              memory: "64Gi"
+              nvidia.com/gpu: "8"
+            limits:
+              cpu: "16"
+              memory: "128Gi"
+              nvidia.com/gpu: "8"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-llama-70b
+  namespace: inference
+spec:
+  selector:
+    app: vllm-llama-70b
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
