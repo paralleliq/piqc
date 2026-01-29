@@ -76,6 +76,35 @@
 - **Flexible Modes**: Auto-detect, remote (kubeconfig), or in-cluster execution
 - **Timeout Controls**: Configurable operation timeouts
 
+### 🔮 Coming Soon
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**🔴 AMD GPU Support**
+
+Support for AMD Instinct and Radeon GPUs via `rocm-smi`:
+- AMD Instinct MI250X/MI300X detection
+- GPU utilization, memory & temperature metrics
+- ROCm ecosystem integration
+- Seamless multi-vendor GPU environments
+
+</td>
+<td width="50%" valign="top">
+
+**🌐 LLM-D (LLM-Distributed)**
+
+Discovery and documentation for distributed LLM inference:
+- Distributed inference topology mapping
+- Multi-node GPU coordination metrics
+- Cross-node performance aggregation
+- Distributed KV cache analysis
+
+</td>
+</tr>
+</table>
+
 ---
 
 ## 🚀 Quick Start
