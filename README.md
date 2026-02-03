@@ -571,7 +571,8 @@ Apache License 2.0 - see [LICENSE](LICENSE) for details.
 ---
 
 <p align="center">
-  <strong>Built with ❤️ by <a href="https://paralleliq.ai">ParallelIQ Cloud</a></strong>
+  <strong>Built with ❤️ by <a href="https://paralleliq.ai">ParallelIQ</a></strong>
   <br/>
-  <sub>🚀 Predictive Orchestration and AI Infrastructure Automation</sub>
+  <sub>🚀 Model-aware GPU Control Plane</sub>
 </p>
+
