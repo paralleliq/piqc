@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/vLLM-Supported-purple?style=for-the-badge" alt="vLLM"/>
 </p>
 
-<h1 align="center">🔍 PIQC - Production Inference Quality Control</h1>
+<h1 align="center">🔍 PIQC Fact Collector — Model-Centric Runtime Telemetry</h1>
 
 <p align="center">
   <strong>Kubernetes AI/ML Model Introspector for vLLM Deployments</strong>
@@ -575,4 +575,5 @@ Apache License 2.0 - see [LICENSE](LICENSE) for details.
   <br/>
   <sub>🚀 Model-aware GPU Control Plane</sub>
 </p>
+
 
