@@ -1,0 +1,21 @@
+name: Runtime support request
+description: Add support for a new serving stack or platform
+title: "[RUNTIME] "
+labels: ["runtime"]
+body:
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime name
+      placeholder: vLLM / TGI / Triton / AMD ROCm / Ray Serve
+
+  - type: textarea
+    id: details
+    attributes:
+      label: How it runs / architecture
+
+  - type: textarea
+    id: required
+    attributes:
+      label: Facts we should collect
+

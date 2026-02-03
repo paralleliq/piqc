@@ -1,0 +1,20 @@
+name: ModelSpec field request
+description: Add or modify a ModelSpec field produced by the scanner
+title: "[MODELSPEC] "
+labels: ["modelspec"]
+body:
+  - type: input
+    id: field
+    attributes:
+      label: Field name
+
+  - type: textarea
+    id: reason
+    attributes:
+      label: Why is this needed?
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Example value
+

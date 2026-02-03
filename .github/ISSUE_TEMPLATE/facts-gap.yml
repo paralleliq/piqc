@@ -1,0 +1,26 @@
+name: Facts gap / incorrect detection
+description: Scanner missed or misreported runtime facts
+title: "[FACTS] "
+labels: ["facts"]
+body:
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: k8s version, cloud, GPU type
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected facts
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual output (paste JSON snippet)
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / errors
+

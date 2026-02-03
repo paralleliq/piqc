@@ -1,0 +1,33 @@
+name: Bug report
+description: Something is broken or not working as expected
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the bug
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run ...
+        2. Deploy ...
+        3. Observe ...
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: v1.0.0
+

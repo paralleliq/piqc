@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest a new capability
+title: "[FEATURE] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What pain are you solving?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Scanner
+        - Advisor
+        - Control Plane
+        - ModelSpec
+        - Docs
+
