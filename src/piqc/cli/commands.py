@@ -141,10 +141,9 @@ def main() -> None:
     help="Generate a single combined output file instead of per-deployment files",
 )
 @click.option(
-    "--collect-runtime",
-    is_flag=True,
-    default=False,
-    help="Collect runtime metrics via vLLM API",
+    "--collect-runtime/--no-collect-runtime",
+    default=True,
+    help="Collect runtime metrics via vLLM API. Default: enabled",
 )
 @click.option(
     "--aggregate/--no-aggregate",
@@ -170,6 +169,13 @@ def main() -> None:
     metavar="DOLLARS",
     help="Override GPU cost in $/GPU/hr (e.g. 3.50). Default: auto-detect by GPU type.",
 )
+@click.option(
+    "--node-cost",
+    type=float,
+    default=None,
+    metavar="DOLLARS",
+    help="Override cost in $/GPU/hr for unallocated nodes. Defaults to --gpu-cost if set.",
+)
 def scan(
     kubeconfig: Optional[str],
     context: Optional[str],
@@ -188,6 +194,7 @@ def scan(
     mode: str,
     output_piqc: bool,
     gpu_cost: Optional[float],
+    node_cost: Optional[float],
 ) -> None:
     """
     Scan Kubernetes cluster for vLLM model deployments.
@@ -318,7 +325,12 @@ def scan(
         if output_format == "table":
             # Table output to console
             table_gen = TableGenerator(console)
-            table_gen.generate_summary_table(result.modelspecs, gpu_cost_override=gpu_cost)
+            table_gen.generate_summary_table(
+                result.modelspecs,
+                gpu_cost_override=gpu_cost,
+                unallocated_nodes=result.unallocated_nodes,
+                node_cost_override=node_cost,
+            )
         
         elif output_format == "yaml":
             yaml_gen = YAMLGenerator()

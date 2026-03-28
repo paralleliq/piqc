@@ -15,6 +15,7 @@ from kubernetes.client import (
     AppsV1Api,
     V1Deployment,
     V1StatefulSet,
+    V1Node,
     V1Pod,
     V1PodList,
 )
@@ -529,6 +530,66 @@ class K8sClient:
             logger.warning(f"Cannot read logs from {namespace}/{pod_name}: {str(e)}")
             return ""
     
+    def list_all_pods(
+        self,
+        field_selector: Optional[str] = None,
+    ) -> list[V1Pod]:
+        """
+        List pods across all namespaces.
+
+        Args:
+            field_selector: Optional field selector to filter pods.
+
+        Returns:
+            List of V1Pod objects.
+        """
+        def _list() -> V1PodList:
+            kwargs: dict[str, Any] = {"_request_timeout": self.timeout}
+            if field_selector:
+                kwargs["field_selector"] = field_selector
+            return self.core_api.list_pod_for_all_namespaces(**kwargs)
+
+        try:
+            result = self._retry_operation(_list, "list_all_pods")
+            logger.debug(f"Found {len(result.items)} pods across all namespaces")
+            return result.items
+        except ApiException as e:
+            if e.status == 403:
+                raise RBACPermissionError(
+                    "Cannot list pods across namespaces",
+                    resource="pods",
+                    verb="list",
+                )
+            logger.warning(f"Failed to list pods: {e.reason}")
+            return []
+
+    def list_nodes(self) -> list[V1Node]:
+        """
+        List all nodes in the cluster.
+
+        Returns:
+            List of V1Node objects.
+
+        Raises:
+            RBACPermissionError: If lacking node list permissions.
+        """
+        def _list() -> Any:
+            return self.core_api.list_node(_request_timeout=self.timeout)
+
+        try:
+            result = self._retry_operation(_list, "list_nodes")
+            logger.debug(f"Found {len(result.items)} nodes")
+            return result.items
+        except ApiException as e:
+            if e.status == 403:
+                raise RBACPermissionError(
+                    "Cannot list nodes",
+                    resource="nodes",
+                    verb="list",
+                )
+            logger.warning(f"Failed to list nodes: {e.reason}")
+            return []
+
     def get_connection_info(self) -> dict[str, str]:
         """
         Get information about the current connection.

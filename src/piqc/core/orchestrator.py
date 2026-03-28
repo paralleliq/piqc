@@ -7,6 +7,7 @@ data from all sources and generating ModelSpec output.
 
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
@@ -46,9 +47,20 @@ from piqc.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+@dataclass
+class UnallocatedNodeInfo:
+    """A node with GPU capacity that has no pods scheduled on it (or partially unallocated)."""
+
+    node_name: str
+    gpu_type: str        # e.g. "A100-SXM4-80GB"
+    total_gpus: int      # total GPU capacity on the node
+    allocated_gpus: int  # GPUs claimed by running pods
+    unallocated_gpus: int
+
+
 class ScanResult:
     """Results from a scan operation."""
-    
+
     def __init__(self) -> None:
         self.modelspecs: list[ModelSpec] = []
         self.warnings: list[str] = []
@@ -57,6 +69,7 @@ class ScanResult:
         self.namespaces_scanned: int = 0
         self.pods_analyzed: int = 0
         self.deployments_found: int = 0
+        self.unallocated_nodes: list[UnallocatedNodeInfo] = []
     
     def add_warning(self, message: str) -> None:
         """Add a warning message."""
@@ -162,7 +175,13 @@ class ScanOrchestrator:
             result.modelspecs = self._process_parallel(grouped, result)
         else:
             result.modelspecs = self._process_sequential(grouped, result)
-        
+
+        # Analyze node-level GPU allocation (unallocated = dark capacity)
+        try:
+            result.unallocated_nodes = self._analyze_node_capacity()
+        except Exception as e:
+            result.add_warning(f"Node capacity analysis failed: {e}")
+
         result.duration_seconds = time.time() - start_time
         
         return result
@@ -478,3 +497,73 @@ class ScanOrchestrator:
             )
             for m in metrics
         ]
+
+    def _analyze_node_capacity(self) -> list[UnallocatedNodeInfo]:
+        """
+        Compare node GPU capacity against allocated GPU requests.
+
+        Returns nodes where GPU capacity exceeds what running pods have claimed,
+        representing dark/unallocated capacity that is still being paid for.
+        """
+        nodes = self.k8s_client.list_nodes()
+        if not nodes:
+            return []
+
+        # Sum GPU requests per node across all running pods (all namespaces)
+        allocated_per_node: dict[str, int] = {}
+        try:
+            all_pods = self.k8s_client.list_all_pods(
+                field_selector="status.phase=Running",
+            )
+        except Exception:
+            all_pods = []
+
+        for pod in all_pods:
+            node_name = pod.spec.node_name if pod.spec else None
+            if not node_name:
+                continue
+            for container in (pod.spec.containers or []):
+                if not container.resources or not container.resources.requests:
+                    continue
+                gpu_req = container.resources.requests.get("nvidia.com/gpu", "0")
+                try:
+                    allocated_per_node[node_name] = (
+                        allocated_per_node.get(node_name, 0) + int(gpu_req)
+                    )
+                except ValueError:
+                    pass
+
+        unallocated: list[UnallocatedNodeInfo] = []
+
+        for node in nodes:
+            if not node.status or not node.status.allocatable:
+                continue
+
+            total_gpus = int(node.status.allocatable.get("nvidia.com/gpu", "0"))
+            if total_gpus == 0:
+                continue
+
+            node_name = node.metadata.name
+            allocated = allocated_per_node.get(node_name, 0)
+            free = total_gpus - allocated
+
+            if free > 0:
+                # Detect GPU type from node labels (best-effort)
+                labels = node.metadata.labels or {}
+                gpu_type = (
+                    labels.get("nvidia.com/gpu.product")
+                    or labels.get("cloud.google.com/gke-accelerator")
+                    or labels.get("node.kubernetes.io/instance-type")
+                    or "unknown"
+                )
+                unallocated.append(
+                    UnallocatedNodeInfo(
+                        node_name=node_name,
+                        gpu_type=gpu_type,
+                        total_gpus=total_gpus,
+                        allocated_gpus=allocated,
+                        unallocated_gpus=free,
+                    )
+                )
+
+        return unallocated
