@@ -19,6 +19,47 @@ This project adheres to [Semantic Versioning](https://semver.org/) and the [Keep
 
 ---
 
+## [1.1.0] — 2026-03-28
+
+### Revenue Leak & Efficiency Reporting
+
+#### New Table Columns
+- **MFU (Model FLOPS Utilization)** — Computes observed FLOPS against theoretical GPU peak, displayed per deployment with color coding (green ≥30%, yellow ≥10%, red <10%)
+- **$/1K tokens** — Cost per 1,000 generated tokens, derived from generation throughput and GPU spend rate
+- **$/hr** — Total GPU spend rate for the deployment (GPU count × replicas × per-GPU rate)
+- **Idle $/day** — Estimated daily waste for deployments with GPU utilization below 60% threshold
+
+#### New Cost Summary Panel
+Printed below the deployment table on every `piqc scan`:
+- **Total GPU spend rate** across all discovered deployments
+- **Leased & idle** — Dollar waste from pods running with GPU util below threshold
+- **Unallocated nodes** — Dollar waste from nodes with GPU capacity but no pods scheduled
+- **Total estimated leak** per day and annualized ($/yr)
+- **Avg MFU** across active deployments with a healthy range indicator (30–60%)
+
+#### Node-Level GPU Capacity Analysis
+- Detects GPU nodes with unscheduled capacity (dark/unallocated GPUs)
+- Resolves GPU type from node labels (`nvidia.com/gpu.product`, `cloud.google.com/gke-accelerator`)
+- Reports unallocated GPU count and estimated daily cost per node
+
+#### New CLI Flags
+- `--gpu-cost DOLLARS` — Override GPU cost in $/GPU/hr (default: auto-detect by GPU type from built-in lookup table)
+- `--node-cost DOLLARS` — Override cost for unallocated node GPUs separately from active deployment GPUs
+
+#### GPU Cost & Peak FLOPS Lookup Tables
+Built-in pricing estimates (USD/hr per GPU) and theoretical peak TFLOPS for:
+H100 SXM5/SXM4/NVL/PCIE, A100 SXM4/PCIE (80GB/40GB), L40S, A10G, A10, L4, V100, T4
+
+#### Unknown Runtime Detection
+- Pods identified as ML workloads but with unrecognized runtimes (TGI, Triton, etc.) are surfaced with a yellow advisory prompt rather than silently dropped
+
+### Changed
+- `--format` default changed from `yaml` to `table` — `piqc scan` with no flags now shows the cost report immediately
+- `--collect-runtime` now defaults to **enabled** — runtime metrics (TPS, latency, cache) are collected on every scan; use `--no-collect-runtime` to disable
+- `K8sClient` gained `list_nodes()` and `list_all_pods()` methods for cluster-wide GPU capacity analysis
+
+---
+
 ## [1.0.0] — 2026-01-30
 
 ### 🎉 Initial Release
