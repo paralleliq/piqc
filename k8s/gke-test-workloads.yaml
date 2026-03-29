@@ -24,6 +24,10 @@ spec:
         app: vllm-llama3-70b
         app.kubernetes.io/name: vllm
     spec:
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
       containers:
         - name: vllm
           image: us-central1-docker.pkg.dev/piqc-483417/piqc/piqc-mock-vllm:latest
@@ -37,7 +41,7 @@ spec:
             - name: SERVED_MODEL_NAME
               value: "llama3-70b"
             - name: TENSOR_PARALLEL_SIZE
-              value: "8"
+              value: "1"
             - name: DTYPE
               value: "bfloat16"
             - name: MAX_MODEL_LEN
@@ -45,20 +49,24 @@ spec:
             - name: GPU_MEMORY_UTILIZATION
               value: "0.90"
             - name: FAKE_GPU_COUNT
-              value: "8"
+              value: "1"
             - name: FAKE_GPU_MODEL
-              value: "A100-SXM4-80GB"
+              value: "Tesla-T4"
             - name: FAKE_GPU_MEMORY_TOTAL
-              value: "81920"
+              value: "16384"
             - name: FAKE_GPU_MEMORY_USED
-              value: "73728"
+              value: "14745"
             - name: FAKE_GPU_UTILIZATION
               value: "4"
+            - name: FAKE_GPU_POWER_DRAW
+              value: "30"
+            - name: FAKE_GPU_POWER_LIMIT
+              value: "70"
           args:
             - "--model"
             - "meta-llama/Meta-Llama-3-70B-Instruct"
             - "--tensor-parallel-size"
-            - "8"
+            - "1"
             - "--dtype"
             - "bfloat16"
             - "--max-model-len"
@@ -71,6 +79,11 @@ spec:
             requests:
               cpu: "500m"
               memory: "512Mi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+              nvidia.com/gpu: "1"
 ---
 apiVersion: v1
 kind: Service
@@ -104,6 +117,10 @@ spec:
         app: vllm-mistral-7b
         app.kubernetes.io/name: vllm
     spec:
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
       containers:
         - name: vllm
           image: us-central1-docker.pkg.dev/piqc-483417/piqc/piqc-mock-vllm:latest
@@ -127,13 +144,17 @@ spec:
             - name: FAKE_GPU_COUNT
               value: "1"
             - name: FAKE_GPU_MODEL
-              value: "A100-SXM4-40GB"
+              value: "Tesla-T4"
             - name: FAKE_GPU_MEMORY_TOTAL
-              value: "40960"
+              value: "16384"
             - name: FAKE_GPU_MEMORY_USED
-              value: "32000"
+              value: "12288"
             - name: FAKE_GPU_UTILIZATION
               value: "82"
+            - name: FAKE_GPU_POWER_DRAW
+              value: "62"
+            - name: FAKE_GPU_POWER_LIMIT
+              value: "70"
           args:
             - "--model"
             - "mistralai/Mistral-7B-Instruct-v0.1"
@@ -147,6 +168,11 @@ spec:
             requests:
               cpu: "500m"
               memory: "512Mi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+              nvidia.com/gpu: "1"
 ---
 apiVersion: v1
 kind: Service
@@ -180,6 +206,10 @@ spec:
         app: vllm-codellama-34b
         app.kubernetes.io/name: vllm
     spec:
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
       containers:
         - name: vllm
           image: us-central1-docker.pkg.dev/piqc-483417/piqc/piqc-mock-vllm:latest
@@ -193,30 +223,39 @@ spec:
             - name: SERVED_MODEL_NAME
               value: "codellama-34b"
             - name: TENSOR_PARALLEL_SIZE
-              value: "4"
+              value: "1"
             - name: DTYPE
               value: "float16"
             - name: FAKE_GPU_COUNT
-              value: "4"
+              value: "1"
             - name: FAKE_GPU_MODEL
-              value: "A100-SXM4-80GB"
+              value: "Tesla-T4"
             - name: FAKE_GPU_MEMORY_TOTAL
-              value: "81920"
+              value: "16384"
             - name: FAKE_GPU_MEMORY_USED
-              value: "65536"
+              value: "13107"
             - name: FAKE_GPU_UTILIZATION
               value: "0"
+            - name: FAKE_GPU_POWER_DRAW
+              value: "10"
+            - name: FAKE_GPU_POWER_LIMIT
+              value: "70"
           args:
             - "--model"
             - "codellama/CodeLlama-34b-Instruct-hf"
             - "--tensor-parallel-size"
-            - "4"
+            - "1"
           ports:
             - containerPort: 8000
           resources:
             requests:
               cpu: "500m"
               memory: "512Mi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+              nvidia.com/gpu: "1"
 ---
 apiVersion: v1
 kind: Namespace
