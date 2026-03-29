@@ -19,7 +19,7 @@ rules:
   # Core API - Pod exec (required for GPU metrics)
   - apiGroups: [""]
     resources: ["pods/exec"]
-    verbs: ["create"]
+    verbs: ["create", "get"]
   
   # Core API - Namespaces
   - apiGroups: [""]
