@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: piqc-scan
+  namespace: kube-system
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      serviceAccountName: piqc
+      restartPolicy: Never
+      containers:
+        - name: piqc
+          image: piqc:latest
+          imagePullPolicy: Never
+          env:
+            - name: COLUMNS
+              value: "220"
+          args:
+            - scan
+            - --mode
+            - incluster
+            - --format
+            - table
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
