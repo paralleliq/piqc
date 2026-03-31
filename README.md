@@ -5,12 +5,12 @@
   <img src="https://img.shields.io/badge/vLLM-Supported-purple?style=for-the-badge" alt="vLLM"/>
 </p>
 
-<h1 align="center">🔍 PIQC Fact Collector — Model-Centric Runtime Telemetry</h1>
+<h1 align="center">🔍 PIQC — GPU Revenue Leak & Inference Efficiency</h1>
 
 <p align="center">
-  <strong>Kubernetes AI/ML Model Introspector for vLLM Deployments</strong>
+  <strong>Kubernetes AI/ML Introspector for vLLM Deployments</strong>
   <br/>
-  <em>Automatically discover, document, and analyze your AI inference infrastructure</em>
+  <em>One command. See which GPUs are leaking money and why.</em>
 </p>
 
 <p align="center">
@@ -25,7 +25,13 @@
 
 ## 🎯 Overview
 
-**PIQC** (Production Inference Quality Control) is a powerful Kubernetes-native introspection tool designed for AI/ML platform teams. It automatically discovers vLLM inference deployments across your cluster and generates comprehensive, standardized **ModelSpec** documentation.
+**PIQC** (Production Inference Quality Control) is a Kubernetes-native tool that discovers AI/ML inference deployments, measures their efficiency, and surfaces the dollar cost of idle and unallocated GPUs — in a single command.
+
+```
+piqc scan
+```
+
+No flags needed. PIQC connects to your current kubectl context, scans all namespaces, and immediately prints a cost report showing which models are running, at what efficiency (MFU), what they cost per 1K tokens, and how much GPU spend is being wasted today.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -62,12 +68,19 @@
   - Queue depth and active requests
   - Health status
 
+### 💰 Revenue Leak Detection
+- **Idle GPU waste** — Deployments with utilization below 60% threshold, with dollar waste per day and annualized
+- **Unallocated nodes** — GPU nodes with no pods scheduled (dark capacity still being paid for)
+- **Cost Summary panel** — Total spend rate, both leak categories, and total estimated leak per day / per year
+- **MFU (Model FLOPS Utilization)** — Observed compute vs. theoretical GPU peak per deployment
+- **Cost per 1K tokens** — Translate GPU spend into a business metric comparable to API pricing
+
 ### 📄 Multiple Output Formats
 | Format | Description |
 |--------|-------------|
-| **YAML** | Kubernetes-style ModelSpec files (default) |
+| **Table** | Cost report with MFU, $/1K tokens, idle waste (default) |
+| **YAML** | Kubernetes-style ModelSpec files |
 | **JSON** | Machine-readable JSON output |
-| **Table** | Rich console table for quick viewing |
 | **PIQC Facts** | Standardized facts bundle for quality assessment |
 
 ### 🚀 Production-Ready
@@ -336,16 +349,30 @@ Same structure as YAML but in JSON format, ideal for programmatic processing.
 
 ### Table Format
 
-Rich console table for quick human-readable viewing:
+Default output of `piqc scan` — no flags required:
 
 ```
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━┓
-┃ Model Name                ┃ Engine ┃ GPU Type           ┃ Replicas ┃ GPU Util ┃ Namespace   ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━┩
-│ meta-llama/Llama-2-7b-hf  │ vllm   │ 4×A100-SXM4-80GB   │        2 │      87% │ inference   │
-│ mistralai/Mistral-7B      │ vllm   │ 2×A100-40GB        │        1 │      72% │ production  │
-│ Qwen/Qwen2-72B            │ vllm   │ 8×H100-SXM5-80GB   │        3 │      91% │ ml-serving  │
-└───────────────────────────┴────────┴────────────────────┴──────────┴──────────┴─────────────┘
+                              Discovered Inference Deployments
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ Deployment                   ┃ Engine  ┃ GPU               ┃ Replicas ┃ GPU Util ┃ MFU    ┃ $/1K tokens┃ $/hr   ┃ Idle $/day   ┃ Namespace      ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ meta-llama/Llama-3-70B-Inst  │ vllm    │ 8xA100-SXM4-80GB  │        2 │       4% │   3.1% │    $0.0842 │ $56.00 │   $1,290.24  │ production     │
+│ mistral-7b-instruct          │ vllm    │ 1xA100-SXM4-40GB  │        1 │      11% │   8.4% │    $0.0156 │  $2.50 │      $53.40  │ production     │
+│ codellama-34b-staging        │ vllm    │ 4xA100-SXM4-80GB  │        1 │       0% │   0.0% │        N/A │ $14.00 │     $336.00  │ staging        │
+│ embedding-bge-large          │ vllm    │ 1xT4              │        3 │      82% │  51.2% │    $0.0003 │  $1.35 │       $5.83  │ shared-services│
+│ unknown-runtime-7f3a2        │ unknown │ 2xA100-SXM4-80GB  │        1 │      N/A │    N/A │        N/A │  $7.00 │ util unknown │ ml-platform    │
+└──────────────────────────────┴─────────┴───────────────────┴──────────┴──────────┴────────┴────────────┴────────┴──────────────┴────────────────┘
+
+╭──────────────────────────────────────── Cost Summary ──────────────────────────────────────────╮
+│   Total GPU spend rate     : $80.85/hr                                                         │
+│                                                                                                │
+│   Leased & idle (util <60%): $1,685.47/day  (pods running, GPUs underused)                    │
+│   Unallocated nodes        :   $336.00/day  (4 GPU(s) with no pods scheduled)                 │
+│                                                                                                │
+│   Total estimated leak     : $2,021.47/day  ($737,836/yr)                                     │
+│                                                                                                │
+│   Avg MFU (active deployments) : 15.7%  (healthy range: 30-60%)                               │
+╰────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ### PIQC Facts Bundle

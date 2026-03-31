@@ -63,15 +63,18 @@
 \vspace{2em}
 
 \begin{tcolorbox}[colback=blue!5,colframe=blue!50!black,title=\textbf{What is PIQC?}]
-\textbf{PIQC (Production Inference Quality Control)} is a Kubernetes-native tool that automatically discovers and documents AI/ML inference deployments running on your cluster.
+\textbf{PIQC (Production Inference Quality Control)} is a Kubernetes-native tool that automatically discovers AI/ML inference deployments, measures their efficiency, and surfaces the dollar cost of idle and unallocated GPUs.
 
 \textbf{Key Features:}
 \begin{itemize}
-    \item Automatic vLLM deployment discovery
-    \item GPU metrics collection (utilization, memory, temperature)
-    \item Runtime metrics from vLLM API (latency, throughput, cache)
-    \item Multiple output formats (YAML, JSON, Table)
-    \item Works remotely via kubectl or in-cluster
+    \item Automatic vLLM deployment discovery across all namespaces
+    \item GPU metrics collection (utilization, memory, temperature) via \texttt{nvidia-smi}
+    \item Runtime metrics from vLLM API (latency, throughput, KV cache)
+    \item \textbf{MFU (Model FLOPS Utilization)} per deployment
+    \item \textbf{Cost-per-1K-tokens} — translate GPU spend into business metrics
+    \item \textbf{Revenue leak reporting} — idle GPU waste and unallocated node detection
+    \item Default table output: run \texttt{piqc scan} and see dollar figures immediately
+    \item Works remotely via kubeconfig or in-cluster as a Kubernetes Job
 \end{itemize}
 \end{tcolorbox}
 
@@ -149,47 +152,61 @@ poetry run piqc test-connection
 %------------------------------------------------------------------------------
 \subsection{Scan for vLLM Deployments}
 
-\subsubsection{Basic Table View}
+\subsubsection{Basic Scan — Cost Report (Default)}
+
+Running \texttt{piqc scan} with no flags connects to your current kubectl context, scans all namespaces, and immediately prints a cost report:
 
 \begin{lstlisting}[language=bash]
-# Scan all namespaces, show table output
-poetry run piqc scan --format table
+poetry run piqc scan
 \end{lstlisting}
+
+The output includes GPU utilization, MFU, \$/1K tokens, idle waste per deployment, and a Cost Summary panel showing total leaked revenue per day and annualized.
 
 \subsubsection{Scan Specific Namespace}
 
 \begin{lstlisting}[language=bash]
-# Scan only the 'inference' namespace
-poetry run piqc scan --namespace inference --format table
+poetry run piqc scan -n production
+\end{lstlisting}
+
+\subsubsection{Override GPU Cost Rate}
+
+If your actual cloud or lease rate differs from the built-in estimates:
+
+\begin{lstlisting}[language=bash]
+# Set GPU cost to $3.50/GPU/hr
+poetry run piqc scan --gpu-cost 3.50
+
+# Set separate rate for unallocated (dark) nodes
+poetry run piqc scan --gpu-cost 3.50 --node-cost 3.50
 \end{lstlisting}
 
 \subsubsection{Full YAML Output}
 
 \begin{lstlisting}[language=bash]
-# Generate detailed ModelSpec YAML
-poetry run piqc scan --namespace inference --format yaml
+# Generate detailed ModelSpec YAML files
+poetry run piqc scan --format yaml -o ./output
 \end{lstlisting}
 
 Files are saved to \texttt{./output/} by default.
 
 %------------------------------------------------------------------------------
-\subsection{Collect Runtime Metrics}
+\subsection{Runtime Metrics}
 
-To collect live vLLM API metrics (latency, throughput, cache):
+Runtime metrics (token throughput, latency, KV cache) are collected automatically on every scan via the vLLM API. They are required for MFU and \$/1K tokens calculations.
+
+To disable runtime collection (faster scan, no MFU or cost-per-token):
 
 \begin{lstlisting}[language=bash]
-poetry run piqc scan --namespace inference \
-    --collect-runtime \
-    --format yaml \
-    -o ./my-output
+poetry run piqc scan --no-collect-runtime
 \end{lstlisting}
 
-\textbf{What you get:}
+\textbf{What runtime collection provides:}
 \begin{itemize}
     \item Request latency percentiles (TTFT, TPOT, E2E)
-    \item Throughput (tokens/sec)
-    \item KV cache usage
-    \item Prefix cache hit rates
+    \item Token throughput (prompt \& generation tokens/sec)
+    \item KV cache and prefix cache hit rates
+    \item MFU (Model FLOPS Utilization)
+    \item Cost per 1K generated tokens
 \end{itemize}
 
 %==============================================================================
@@ -540,18 +557,20 @@ poetry run piqc scan --namespace inference \
 
 \begin{table}[h]
 \small
-\begin{tabular}{@{}p{5cm}p{8cm}@{}}
+\begin{tabular}{@{}p{5.5cm}p{7.5cm}@{}}
 \toprule
 \textbf{Option} & \textbf{Description} \\
 \midrule
-\texttt{--namespace, -n} & Scan specific namespace(s) \\
-\texttt{--format, -f} & Output format: table, yaml, json \\
-\texttt{--output, -o} & Output directory \\
-\texttt{--collect-runtime} & Collect vLLM API runtime metrics \\
-\texttt{--no-exec} & Skip GPU metrics (faster) \\
+\texttt{--namespace, -n} & Scan specific namespace (default: all) \\
+\texttt{--format} & Output format: \textbf{table} (default), yaml, json \\
+\texttt{--output, -o} & Output directory for yaml/json files \\
+\texttt{--gpu-cost DOLLARS} & Override GPU cost in \$/GPU/hr \\
+\texttt{--node-cost DOLLARS} & Override cost for unallocated node GPUs \\
+\texttt{--collect-runtime / --no-collect-runtime} & Runtime metrics via vLLM API (default: on) \\
+\texttt{--no-exec} & Skip GPU metrics collection via pod exec \\
 \texttt{--verbose, -v} & Enable verbose logging \\
-\texttt{--debug} & Enable debug logging \\
-\texttt{--workers} & Number of parallel workers \\
+\texttt{--debug} & Enable debug trace logging \\
+\texttt{--workers} & Number of parallel scan workers \\
 \texttt{--combined} & Output single combined file \\
 \texttt{--output-piqc} & Generate PIQC facts bundle \\
 \bottomrule
@@ -591,15 +610,32 @@ poetry run piqc scan --namespace inference \
 
 \subsection{Table Format}
 
-Quick visual overview of discovered deployments:
+Default output — run \texttt{piqc scan} to see this immediately:
 
 \begin{lstlisting}[basicstyle=\ttfamily\tiny]
-┏━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┓
-┃ Model Name           ┃ Engine ┃ GPU Type   ┃ Replicas ┃ GPU Util ┃
-┡━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━┩
-│ TinyLlama-1.1B-...   │ vllm   │ 1xTesla T4 │        1 │      15% │
-└──────────────────────┴────────┴────────────┴──────────┴──────────┘
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃ Deployment                   ┃ Engine  ┃ GPU               ┃ Replicas ┃ GPU Util ┃ MFU    ┃ $/1K tokens┃ $/hr   ┃ Idle $/day   ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ meta-llama/Llama-3-70B-Inst  │ vllm    │ 8xA100-SXM4-80GB  │        2 │       4% │   3.1% │    $0.0842 │ $56.00 │   $1,290.24  │
+│ mistral-7b-instruct          │ vllm    │ 1xA100-SXM4-40GB  │        1 │      11% │   8.4% │    $0.0156 │  $2.50 │      $53.40  │
+│ codellama-34b-staging        │ vllm    │ 4xA100-SXM4-80GB  │        1 │       0% │   0.0% │        N/A │ $14.00 │     $336.00  │
+│ embedding-bge-large          │ vllm    │ 1xT4              │        3 │      82% │  51.2% │    $0.0003 │  $1.35 │       $5.83  │
+└──────────────────────────────┴─────────┴───────────────────┴──────────┴──────────┴────────┴────────────┴────────┴──────────────┘
+
+Cost Summary
+  Total GPU spend rate     : $73.85/hr
+  Leased & idle (util <60%): $1,685.47/day  (pods running, GPUs underused)
+  Unallocated nodes        :   $336.00/day  (4 GPUs with no pods scheduled)
+  Total estimated leak     : $2,021.47/day  ($737,836/yr)
+  Avg MFU (active)         : 15.7%  (healthy range: 30-60%)
 \end{lstlisting}
+
+\textbf{Column definitions:}
+\begin{itemize}
+    \item \textbf{MFU} — Model FLOPS Utilization: observed compute vs.\ theoretical GPU peak. Green $\geq$30\%, yellow $\geq$10\%, red $<$10\%.
+    \item \textbf{\$/1K tokens} — Cost per 1,000 generated tokens based on live throughput and GPU spend rate.
+    \item \textbf{Idle \$/day} — Estimated daily waste for this deployment. Red = utilization below 60\% threshold.
+\end{itemize}
 
 \subsection{YAML Format}
 
@@ -741,12 +777,14 @@ poetry run piqc scan --namespace inference --debug
 %==============================================================================
 
 \begin{enumerate}
-    \item \textbf{Regular Scanning}: Run PIQC scans regularly to track deployment changes
-    \item \textbf{Use Namespaces}: Scan specific namespaces for faster results
-    \item \textbf{Collect Runtime Metrics}: Use \texttt{--collect-runtime} for production monitoring
-    \item \textbf{Save Outputs}: Always use \texttt{-o} flag to save results
-    \item \textbf{Version Control}: Store ModelSpec files in version control
-    \item \textbf{Automate}: Integrate PIQC into CI/CD pipelines
+    \item \textbf{Run \texttt{piqc scan} first}: The default table output gives an immediate cost report with no flags needed.
+    \item \textbf{Set your actual GPU rate}: Use \texttt{--gpu-cost} with your real lease or cloud rate so the dollar figures are accurate, not estimates.
+    \item \textbf{Prioritize red MFU rows}: Deployments with MFU below 10\% are strong decommission or consolidation candidates.
+    \item \textbf{Act on unallocated nodes first}: These are GPUs with no pods at all — pure spend with zero utilization. Schedule workloads or return the capacity.
+    \item \textbf{Use \texttt{--no-collect-runtime} for fast audits}: Skips vLLM API calls for a quicker scan when MFU and \$/1K tokens are not needed.
+    \item \textbf{Use namespaces to scope}: Use \texttt{-n production} to focus on live workloads and exclude staging noise.
+    \item \textbf{Save YAML for records}: Use \texttt{--format yaml -o ./snapshots} to build a history of deployment state.
+    \item \textbf{Automate}: Run PIQC as a Kubernetes CronJob in-cluster to generate daily cost reports without manual intervention.
 \end{enumerate}
 
 \end{document}

@@ -1,0 +1,224 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inference
+---
+# vLLM Llama-3 70B — simulates a large underutilized deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-llama3-70b
+  namespace: inference
+  labels:
+    app: vllm-llama3-70b
+    app.kubernetes.io/name: vllm
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vllm-llama3-70b
+  template:
+    metadata:
+      labels:
+        app: vllm-llama3-70b
+        app.kubernetes.io/name: vllm
+    spec:
+      containers:
+        - name: vllm
+          image: piqc-mock-vllm:latest
+          imagePullPolicy: Never
+          command: ["python", "/app/server.py"]
+          env:
+            - name: VLLM_VERSION
+              value: "0.4.2"
+            - name: MODEL_NAME
+              value: "meta-llama/Meta-Llama-3-70B-Instruct"
+            - name: SERVED_MODEL_NAME
+              value: "llama3-70b"
+            - name: TENSOR_PARALLEL_SIZE
+              value: "8"
+            - name: DTYPE
+              value: "bfloat16"
+            - name: MAX_MODEL_LEN
+              value: "8192"
+            - name: GPU_MEMORY_UTILIZATION
+              value: "0.90"
+            - name: FAKE_GPU_COUNT
+              value: "8"
+            - name: FAKE_GPU_MODEL
+              value: "A100-SXM4-80GB"
+            - name: FAKE_GPU_MEMORY_TOTAL
+              value: "81920"
+            - name: FAKE_GPU_MEMORY_USED
+              value: "73728"
+            - name: FAKE_GPU_UTILIZATION
+              value: "4"
+          args:
+            - "--model"
+            - "meta-llama/Meta-Llama-3-70B-Instruct"
+            - "--tensor-parallel-size"
+            - "8"
+            - "--dtype"
+            - "bfloat16"
+            - "--max-model-len"
+            - "8192"
+            - "--gpu-memory-utilization"
+            - "0.90"
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-llama3-70b
+  namespace: inference
+spec:
+  selector:
+    app: vllm-llama3-70b
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+# vLLM Mistral-7B — simulates a healthy production deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-mistral-7b
+  namespace: inference
+  labels:
+    app: vllm-mistral-7b
+    app.kubernetes.io/name: vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-mistral-7b
+  template:
+    metadata:
+      labels:
+        app: vllm-mistral-7b
+        app.kubernetes.io/name: vllm
+    spec:
+      containers:
+        - name: vllm
+          image: piqc-mock-vllm:latest
+          imagePullPolicy: Never
+          command: ["python", "/app/server.py"]
+          env:
+            - name: VLLM_VERSION
+              value: "0.4.2"
+            - name: MODEL_NAME
+              value: "mistralai/Mistral-7B-Instruct-v0.1"
+            - name: SERVED_MODEL_NAME
+              value: "mistral-7b"
+            - name: TENSOR_PARALLEL_SIZE
+              value: "1"
+            - name: DTYPE
+              value: "float16"
+            - name: MAX_MODEL_LEN
+              value: "8192"
+            - name: GPU_MEMORY_UTILIZATION
+              value: "0.85"
+            - name: FAKE_GPU_COUNT
+              value: "1"
+            - name: FAKE_GPU_MODEL
+              value: "A100-SXM4-40GB"
+            - name: FAKE_GPU_MEMORY_TOTAL
+              value: "40960"
+            - name: FAKE_GPU_MEMORY_USED
+              value: "32000"
+            - name: FAKE_GPU_UTILIZATION
+              value: "82"
+          args:
+            - "--model"
+            - "mistralai/Mistral-7B-Instruct-v0.1"
+            - "--tensor-parallel-size"
+            - "1"
+            - "--dtype"
+            - "float16"
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-mistral-7b
+  namespace: inference
+spec:
+  selector:
+    app: vllm-mistral-7b
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+# CodeLlama staging — simulates a completely idle staging deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-codellama-34b-staging
+  namespace: staging
+  labels:
+    app: vllm-codellama-34b
+    app.kubernetes.io/name: vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-codellama-34b
+  template:
+    metadata:
+      labels:
+        app: vllm-codellama-34b
+        app.kubernetes.io/name: vllm
+    spec:
+      containers:
+        - name: vllm
+          image: piqc-mock-vllm:latest
+          imagePullPolicy: Never
+          command: ["python", "/app/server.py"]
+          env:
+            - name: VLLM_VERSION
+              value: "0.4.2"
+            - name: MODEL_NAME
+              value: "codellama/CodeLlama-34b-Instruct-hf"
+            - name: SERVED_MODEL_NAME
+              value: "codellama-34b"
+            - name: TENSOR_PARALLEL_SIZE
+              value: "4"
+            - name: DTYPE
+              value: "float16"
+            - name: FAKE_GPU_COUNT
+              value: "4"
+            - name: FAKE_GPU_MODEL
+              value: "A100-SXM4-80GB"
+            - name: FAKE_GPU_MEMORY_TOTAL
+              value: "81920"
+            - name: FAKE_GPU_MEMORY_USED
+              value: "65536"
+            - name: FAKE_GPU_UTILIZATION
+              value: "0"
+          args:
+            - "--model"
+            - "codellama/CodeLlama-34b-Instruct-hf"
+            - "--tensor-parallel-size"
+            - "4"
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: staging

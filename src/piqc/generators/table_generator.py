@@ -4,16 +4,134 @@ Table output generator.
 Generates formatted console tables from ModelSpec data.
 """
 
+import re
 from typing import Optional
 
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 
+from piqc.core.orchestrator import UnallocatedNodeInfo
 from piqc.models.modelspec import ModelSpec
 from piqc.utils.logger import get_logger
 
 
 logger = get_logger(__name__)
+
+
+# On-demand cloud GPU cost estimates (USD/hr per GPU).
+# Users can override with --gpu-cost.
+_GPU_COST_PER_HOUR: dict[str, float] = {
+    "H100-SXM5-80GB": 5.00,
+    "H100-NVL": 4.50,
+    "H100-SXM4-80GB": 4.25,
+    "H100-PCIE-80GB": 4.00,
+    "H100": 4.00,
+    "A100-SXM4-80GB": 3.50,
+    "A100-PCIE-80GB": 3.00,
+    "A100-SXM4-40GB": 2.50,
+    "A100-PCIE-40GB": 2.25,
+    "A100": 3.00,
+    "L40S": 2.00,
+    "A10G": 1.25,
+    "A10": 1.00,
+    "L4": 0.80,
+    "V100-SXM2-32GB": 1.25,
+    "V100-SXM2-16GB": 1.00,
+    "V100": 1.00,
+    "T4": 0.45,
+}
+_DEFAULT_GPU_COST_PER_HOUR = 2.00
+_IDLE_THRESHOLD = 60  # utilization % below which a GPU is considered idle
+
+# GPU tier ranking: higher number = more powerful / more expensive.
+# Used to detect tier misplacement (model on a GPU tier beyond what it needs).
+_GPU_TIER: dict[str, int] = {
+    "T4": 0,
+    "L4": 1,
+    "A10": 1,
+    "A10G": 1,
+    "V100-SXM2-16GB": 2,
+    "V100-SXM2-32GB": 2,
+    "V100": 2,
+    "A100-SXM4-40GB": 3,
+    "A100-PCIE-40GB": 3,
+    "A100-SXM4-80GB": 4,
+    "A100-PCIE-80GB": 4,
+    "A100": 4,
+    "L40S": 4,
+    "H100-PCIE-80GB": 5,
+    "H100-SXM4-80GB": 5,
+    "H100-NVL": 5,
+    "H100-SXM5-80GB": 5,
+    "H100": 5,
+}
+_DEFAULT_GPU_TIER = 4  # A100-class as fallback
+
+# Representative $/hr cost per tier (used to compute misplacement waste delta).
+_TIER_COST: dict[int, float] = {
+    0: 0.45,  # T4
+    1: 0.80,  # L4 / A10
+    2: 1.00,  # V100
+    3: 2.25,  # A100-40GB
+    4: 3.00,  # A100-80GB
+    5: 4.00,  # H100
+}
+
+# Minimum GPU tier required by model size.
+# Each entry: (max_param_billions, min_tier, display_name)
+# A model with param_count <= threshold can run adequately on that tier.
+_MIN_TIER_BY_PARAMS: list[tuple[float, int, str]] = [
+    (7.0,        0, "T4"),
+    (13.0,       1, "L4/A10"),
+    (34.0,       3, "A100-40GB"),
+    (70.0,       4, "A100-80GB"),
+    (float("inf"), 5, "H100"),
+]
+
+# Theoretical peak FLOPS in TFLOPS (bf16/fp16) per GPU.
+_GPU_PEAK_TFLOPS: dict[str, float] = {
+    "H100-SXM5-80GB": 1979.0,
+    "H100-SXM4-80GB": 989.0,
+    "H100-NVL": 989.0,
+    "H100-PCIE-80GB": 756.0,
+    "H100": 989.0,
+    "A100-SXM4-80GB": 312.0,
+    "A100-SXM4-40GB": 312.0,
+    "A100-PCIE-80GB": 312.0,
+    "A100-PCIE-40GB": 312.0,
+    "A100": 312.0,
+    "L40S": 362.0,
+    "A10G": 125.0,
+    "A10": 125.0,
+    "L4": 121.0,
+    "V100-SXM2-32GB": 125.0,
+    "V100-SXM2-16GB": 125.0,
+    "V100": 125.0,
+    "T4": 65.0,
+}
+_DEFAULT_GPU_PEAK_TFLOPS = 312.0  # A100 as fallback
+
+
+def _parse_param_billions(model_name: str) -> Optional[float]:
+    """
+    Extract parameter count in billions from a model name string.
+
+    Handles standard naming conventions:
+      - 7B, 13B, 70B, 1.5B, 0.5B
+      - MoE notation 8x7B (uses active expert size, not total)
+    """
+    if not model_name:
+        return None
+    # MoE: e.g. "8x7B" — use the per-expert size as effective active params
+    moe = re.search(r"\d+x(\d+(?:\.\d+)?)b", model_name, re.IGNORECASE)
+    if moe:
+        return float(moe.group(1))
+    # Standard: e.g. "70B", "7b", "1.5B"
+    match = re.search(r"(\d+(?:\.\d+)?)b", model_name, re.IGNORECASE)
+    if match:
+        return float(match.group(1))
+    return None
 
 
 class TableGenerator:
@@ -32,52 +150,87 @@ class TableGenerator:
         """
         self.console = console or Console()
     
-    def generate_summary_table(self, modelspecs: list[ModelSpec]) -> None:
+    def generate_summary_table(
+        self,
+        modelspecs: list[ModelSpec],
+        gpu_cost_override: Optional[float] = None,
+        unallocated_nodes: Optional[list[UnallocatedNodeInfo]] = None,
+        node_cost_override: Optional[float] = None,
+    ) -> None:
         """
         Generate and print a summary table of all ModelSpecs.
-        
+
         Args:
             modelspecs: List of ModelSpec objects.
+            gpu_cost_override: Optional $/GPU/hr override (uses built-in lookup if None).
+            unallocated_nodes: Nodes with unscheduled GPU capacity.
+            node_cost_override: Optional $/GPU/hr override for unallocated node GPUs.
         """
         if not modelspecs:
             self.console.print("[dim]No inference deployments found[/dim]")
             return
-        
+
         table = Table(
             title="Discovered Inference Deployments",
             show_header=True,
             header_style="bold",
         )
-        
+
         # Add columns
-        table.add_column("Model Name", style="cyan", no_wrap=True)
-        table.add_column("Engine", style="green")
-        table.add_column("GPU Type", style="yellow")
-        table.add_column("Replicas", justify="right")
-        table.add_column("GPU Util", justify="right")
-        table.add_column("Namespace", style="dim")
-        
+        table.add_column("Deployment",  style="cyan", no_wrap=True)
+        table.add_column("Engine",      style="green")
+        table.add_column("GPU",         style="yellow")
+        table.add_column("Replicas",    justify="right")
+        table.add_column("GPU Util",    justify="right")
+        table.add_column("MFU",         justify="right")
+        table.add_column("$/1K tokens", justify="right")
+        table.add_column("$/hr",        justify="right")
+        table.add_column("Idle $/day",  justify="right")
+        table.add_column("Tier Fit",    justify="center")
+        table.add_column("Namespace",   style="dim")
+
         for spec in modelspecs:
-            # Format model name
             model_name = spec.model.name or spec.metadata.name
-            if len(model_name) > 25:
-                model_name = model_name[:22] + "..."
-            
-            # Format GPU info
+            if len(model_name) > 30:
+                model_name = model_name[:27] + "..."
+
             gpu_info = self._format_gpu_info(spec)
             gpu_util = self._format_gpu_utilization(spec)
-            
+            cost_hr, idle_day = self._compute_deployment_costs(spec, gpu_cost_override)
+
+            cost_str = f"${cost_hr:.2f}" if cost_hr is not None else "[dim]N/A[/dim]"
+            idle_str = self._format_idle_cost(idle_day, spec)
+
+            mfu = self._compute_mfu(spec)
+            mfu_str = self._format_mfu(mfu) if mfu is not None else "[dim]N/A[/dim]"
+
+            cpt = self._compute_cost_per_1k_tokens(spec, gpu_cost_override)
+            cpt_str = f"${cpt:.4f}" if cpt is not None else "[dim]N/A[/dim]"
+
+            is_misplaced, _, min_label = self._compute_misplacement(spec, gpu_cost_override)
+            if is_misplaced:
+                tier_str = f"[yellow]⚠ >{min_label}[/yellow]"
+            else:
+                param_billions = _parse_param_billions(spec.model.name or "")
+                tier_str = "[green]✓[/green]" if param_billions is not None else "[dim]?[/dim]"
+
             table.add_row(
                 model_name,
                 spec.engine.name,
                 gpu_info,
                 str(spec.resources.replicas),
                 gpu_util,
+                mfu_str,
+                cpt_str,
+                cost_str,
+                idle_str,
+                tier_str,
                 spec.metadata.namespace,
             )
-        
+
         self.console.print()
         self.console.print(table)
+        self.print_waste_summary(modelspecs, gpu_cost_override, unallocated_nodes, node_cost_override)
         self.console.print()
     
     def generate_detailed_table(self, modelspec: ModelSpec) -> None:
@@ -181,6 +334,231 @@ class TableGenerator:
                 f"  - {framework:12s}: {count:3d} deployment(s) ({percentage:.0f}%)"
             )
     
+    def _estimate_gpu_cost(self, gpu_type: str, override: Optional[float]) -> float:
+        """Return $/hr for a single GPU of the given type."""
+        if override is not None:
+            return override
+        if gpu_type in _GPU_COST_PER_HOUR:
+            return _GPU_COST_PER_HOUR[gpu_type]
+        gpu_upper = gpu_type.upper()
+        for key, cost in _GPU_COST_PER_HOUR.items():
+            if key.upper() in gpu_upper:
+                return cost
+        return _DEFAULT_GPU_COST_PER_HOUR
+
+    def _estimate_gpu_peak_tflops(self, gpu_type: str) -> float:
+        """Return theoretical peak TFLOPS (bf16) for a single GPU."""
+        if gpu_type in _GPU_PEAK_TFLOPS:
+            return _GPU_PEAK_TFLOPS[gpu_type]
+        gpu_upper = gpu_type.upper()
+        for key, tflops in _GPU_PEAK_TFLOPS.items():
+            if key.upper() in gpu_upper:
+                return tflops
+        return _DEFAULT_GPU_PEAK_TFLOPS
+
+    def _compute_mfu(self, spec: ModelSpec) -> Optional[float]:
+        """
+        Compute Model FLOPS Utilization (MFU).
+
+        MFU = observed_FLOPS / peak_FLOPS
+        observed_FLOPS = 2 × param_count × generation_tokens_per_sec
+        peak_FLOPS     = sum(peak_tflops per GPU) × replicas
+        """
+        if not spec.runtime_state or not spec.runtime_state.vllm:
+            return None
+        gen_tps = spec.runtime_state.vllm.generation_tokens_per_sec
+        if not gen_tps or gen_tps <= 0:
+            return None
+
+        param_billions = _parse_param_billions(spec.model.name or "")
+        if param_billions is None:
+            return None
+
+        gpus = spec.resources.gpus
+        if not gpus:
+            return None
+
+        observed_flops = 2.0 * param_billions * 1e9 * gen_tps
+        peak_tflops = sum(
+            self._estimate_gpu_peak_tflops(gpu.type) for gpu in gpus
+        ) * spec.resources.replicas
+        peak_flops = peak_tflops * 1e12
+
+        return min(observed_flops / peak_flops, 1.0)
+
+    def _compute_cost_per_1k_tokens(
+        self,
+        spec: ModelSpec,
+        gpu_cost_override: Optional[float],
+    ) -> Optional[float]:
+        """
+        Compute cost per 1K generated tokens.
+
+        $/1K tokens = ($/hr / (gen_tokens_per_sec × 3600)) × 1000
+        """
+        if not spec.runtime_state or not spec.runtime_state.vllm:
+            return None
+        gen_tps = spec.runtime_state.vllm.generation_tokens_per_sec
+        if not gen_tps or gen_tps <= 0:
+            return None
+
+        cost_hr, _ = self._compute_deployment_costs(spec, gpu_cost_override)
+        if cost_hr is None or cost_hr <= 0:
+            return None
+
+        return (cost_hr / (gen_tps * 3600.0)) * 1000.0
+
+    def _compute_deployment_costs(
+        self,
+        spec: ModelSpec,
+        gpu_cost_override: Optional[float],
+    ) -> tuple[Optional[float], Optional[float]]:
+        """
+        Return (cost_per_hr, idle_cost_per_day) for the deployment.
+
+        cost_per_hr  — total GPU spend across all replicas.
+        idle_cost_per_day — GPU dollars being wasted (util < threshold).
+        Either value is None when data is insufficient.
+        """
+        gpus = spec.resources.gpus
+        if not gpus:
+            return None, None
+
+        cost_per_hr = sum(
+            self._estimate_gpu_cost(gpu.type, gpu_cost_override) for gpu in gpus
+        ) * spec.resources.replicas
+
+        utilizations = [gpu.utilization for gpu in gpus if gpu.utilization is not None]
+        if not utilizations:
+            return cost_per_hr, None
+
+        avg_util = sum(utilizations) / len(utilizations)
+        idle_fraction = max(0.0, 1.0 - avg_util / 100.0)
+        idle_cost_per_day = cost_per_hr * idle_fraction * 24.0
+
+        return cost_per_hr, idle_cost_per_day
+
+    def _format_idle_cost(
+        self,
+        idle_day: Optional[float],
+        spec: ModelSpec,
+    ) -> str:
+        """Format the idle waste column with color coding."""
+        if idle_day is None:
+            gpus = spec.resources.gpus
+            if not gpus:
+                return "[dim]N/A[/dim]"
+            return "[dim]util unknown[/dim]"
+
+        utilizations = [
+            gpu.utilization for gpu in spec.resources.gpus if gpu.utilization is not None
+        ]
+        avg_util = sum(utilizations) / len(utilizations) if utilizations else 100
+
+        formatted = f"${idle_day:,.2f}"
+        if avg_util < _IDLE_THRESHOLD:
+            return f"[red]{formatted}[/red]"
+        return f"[green]{formatted}[/green]"
+
+    def _format_mfu(self, mfu: float) -> str:
+        """Format MFU percentage with color coding."""
+        pct = mfu * 100
+        formatted = f"{pct:.1f}%"
+        if pct >= 30:
+            return f"[green]{formatted}[/green]"
+        elif pct >= 10:
+            return f"[yellow]{formatted}[/yellow]"
+        return f"[red]{formatted}[/red]"
+
+    def print_waste_summary(
+        self,
+        modelspecs: list[ModelSpec],
+        gpu_cost_override: Optional[float] = None,
+        unallocated_nodes: Optional[list[UnallocatedNodeInfo]] = None,
+        node_cost_override: Optional[float] = None,
+    ) -> None:
+        """Print a cost summary panel below the table."""
+        total_cost_hr = 0.0
+        idle_day = 0.0
+        missing_util = 0
+
+        for spec in modelspecs:
+            cost_hr, spec_idle_day = self._compute_deployment_costs(spec, gpu_cost_override)
+            if cost_hr is not None:
+                total_cost_hr += cost_hr
+            if spec_idle_day is not None:
+                idle_day += spec_idle_day
+            elif spec.resources.gpus:
+                missing_util += 1
+
+        # Category 2: unallocated node GPUs (dark capacity)
+        dark_day = 0.0
+        dark_gpu_count = 0
+        for node in (unallocated_nodes or []):
+            rate = self._estimate_gpu_cost(node.gpu_type, node_cost_override or gpu_cost_override)
+            dark_day += rate * node.unallocated_gpus * 24.0
+            dark_gpu_count += node.unallocated_gpus
+
+        # Category 3: tier misplacement (model on a higher GPU tier than required)
+        misplaced_day = 0.0
+        misplaced_count = 0
+        for spec in modelspecs:
+            is_misplaced, waste, _ = self._compute_misplacement(spec, gpu_cost_override)
+            if is_misplaced and waste is not None:
+                misplaced_day += waste
+                misplaced_count += 1
+
+        total_leak_day = idle_day + dark_day + misplaced_day
+
+        lines: list[str] = []
+        if total_cost_hr > 0:
+            lines.append(f"  Total GPU spend rate     : [bold]${total_cost_hr:,.2f}/hr[/bold]")
+
+        lines.append("")
+
+        if idle_day > 0:
+            lines.append(
+                f"  Leased & idle (util <{_IDLE_THRESHOLD}%) : [bold red]${idle_day:,.2f}/day[/bold red]"
+                f"  [dim](pods running, GPUs underused)[/dim]"
+            )
+        if dark_day > 0:
+            lines.append(
+                f"  Unallocated nodes        : [bold red]${dark_day:,.2f}/day[/bold red]"
+                f"  [dim]({dark_gpu_count} GPU(s) with no pods scheduled)[/dim]"
+            )
+        if misplaced_day > 0:
+            lines.append(
+                f"  Tier misplacement        : [bold red]${misplaced_day:,.2f}/day[/bold red]"
+                f"  [dim]({misplaced_count} model(s) on oversized GPU tier)[/dim]"
+            )
+
+        if total_leak_day > 0:
+            total_leak_yr = total_leak_day * 365
+            lines.append("")
+            lines.append(
+                f"  Total estimated leak     : [bold red]${total_leak_day:,.2f}/day[/bold red]"
+                f"  ([dim]${total_leak_yr:,.0f}/yr[/dim])"
+            )
+
+        # Avg MFU across deployments that have runtime metrics
+        mfus = [m for spec in modelspecs if (m := self._compute_mfu(spec)) is not None]
+        if mfus:
+            avg_mfu = sum(mfus) / len(mfus) * 100
+            mfu_color = "green" if avg_mfu >= 30 else ("yellow" if avg_mfu >= 10 else "red")
+            lines.append(
+                f"\n  Avg MFU (active deployments) : [{mfu_color}]{avg_mfu:.1f}%[/{mfu_color}]"
+                f"  [dim](healthy range: 30–60%)[/dim]"
+            )
+
+        if missing_util > 0:
+            lines.append(
+                f"\n  [dim]{missing_util} deployment(s) missing GPU util data"
+                f" — re-run without --no-exec for full breakdown[/dim]"
+            )
+
+        if lines:
+            self.console.print(Panel("\n".join(lines), title="Cost Summary", expand=False))
+
     def _format_gpu_info(self, spec: ModelSpec) -> str:
         """Format GPU information for display."""
         gpus = spec.resources.gpus
@@ -204,13 +582,13 @@ class TableGenerator:
         gpus = spec.resources.gpus
         if not gpus:
             return "N/A"
-        
+
         utilizations = [gpu.utilization for gpu in gpus if gpu.utilization is not None]
         if not utilizations:
             return "N/A"
-        
+
         avg_util = sum(utilizations) / len(utilizations)
-        
+
         # Color code based on utilization
         if avg_util >= 80:
             return f"[green]{avg_util:.0f}%[/green]"
@@ -218,6 +596,62 @@ class TableGenerator:
             return f"[yellow]{avg_util:.0f}%[/yellow]"
         else:
             return f"[red]{avg_util:.0f}%[/red]"
+
+    def _get_gpu_tier(self, gpu_type: str) -> int:
+        """Return the tier level for a GPU type string."""
+        if gpu_type in _GPU_TIER:
+            return _GPU_TIER[gpu_type]
+        gpu_upper = gpu_type.upper()
+        for key, tier in _GPU_TIER.items():
+            if key.upper() in gpu_upper:
+                return tier
+        return _DEFAULT_GPU_TIER
+
+    def _compute_misplacement(
+        self,
+        spec: ModelSpec,
+        gpu_cost_override: Optional[float],
+    ) -> tuple[bool, Optional[float], Optional[str]]:
+        """
+        Detect GPU tier misplacement for a deployment.
+
+        Returns (is_misplaced, wasted_cost_per_day, min_gpu_label).
+        Misplacement means the model is running on a higher GPU tier than its
+        parameter count requires, wasting the cost delta per GPU per day.
+        """
+        gpus = spec.resources.gpus
+        if not gpus:
+            return False, None, None
+
+        param_billions = _parse_param_billions(spec.model.name or "")
+        if param_billions is None:
+            return False, None, None
+
+        # Determine minimum required tier for this model size
+        min_tier = 5
+        min_gpu_label = "H100"
+        for threshold, tier, label in _MIN_TIER_BY_PARAMS:
+            if param_billions <= threshold:
+                min_tier = tier
+                min_gpu_label = label
+                break
+
+        actual_gpu_type = gpus[0].type
+        actual_tier = self._get_gpu_tier(actual_gpu_type)
+
+        if actual_tier <= min_tier:
+            return False, None, None
+
+        # Waste = cost delta between actual tier and minimum required tier per GPU
+        actual_cost = self._estimate_gpu_cost(actual_gpu_type, gpu_cost_override)
+        min_cost = _TIER_COST.get(min_tier, _TIER_COST[0])
+        cost_delta = actual_cost - min_cost
+        if cost_delta <= 0:
+            return False, None, None
+
+        total_gpus = len(gpus) * spec.resources.replicas
+        wasted_per_day = cost_delta * total_gpus * 24.0
+        return True, wasted_per_day, min_gpu_label
 
 
 def format_duration(seconds: float) -> str:

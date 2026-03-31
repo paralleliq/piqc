@@ -87,8 +87,8 @@ def main() -> None:
     "--format",
     "output_format",
     type=click.Choice(["yaml", "json", "table"]),
-    default="yaml",
-    help="Output format. Default: yaml",
+    default="table",
+    help="Output format. Default: table",
 )
 @click.option(
     "--output",
@@ -141,10 +141,9 @@ def main() -> None:
     help="Generate a single combined output file instead of per-deployment files",
 )
 @click.option(
-    "--collect-runtime",
-    is_flag=True,
-    default=False,
-    help="Collect runtime metrics via vLLM API",
+    "--collect-runtime/--no-collect-runtime",
+    default=True,
+    help="Collect runtime metrics via vLLM API. Default: enabled",
 )
 @click.option(
     "--aggregate/--no-aggregate",
@@ -163,6 +162,20 @@ def main() -> None:
     default=False,
     help="Generate piqc-facts.json output (PIQC scan v0.1 schema)",
 )
+@click.option(
+    "--gpu-cost",
+    type=float,
+    default=None,
+    metavar="DOLLARS",
+    help="Override GPU cost in $/GPU/hr (e.g. 3.50). Default: auto-detect by GPU type.",
+)
+@click.option(
+    "--node-cost",
+    type=float,
+    default=None,
+    metavar="DOLLARS",
+    help="Override cost in $/GPU/hr for unallocated nodes. Defaults to --gpu-cost if set.",
+)
 def scan(
     kubeconfig: Optional[str],
     context: Optional[str],
@@ -180,6 +193,8 @@ def scan(
     aggregate: bool,
     mode: str,
     output_piqc: bool,
+    gpu_cost: Optional[float],
+    node_cost: Optional[float],
 ) -> None:
     """
     Scan Kubernetes cluster for vLLM model deployments.
@@ -298,10 +313,24 @@ def scan(
     
     # Generate output
     if result.modelspecs:
+        # Show hint for unknown-runtime deployments
+        unknown = [s for s in result.modelspecs if s.engine.name == "unknown"]
+        if unknown:
+            console.print(
+                f"[yellow]  {len(unknown)} unknown-runtime pod(s) detected "
+                f"(TGI / Triton / other). Run with --verbose to inspect.[/yellow]"
+            )
+            console.print()
+
         if output_format == "table":
             # Table output to console
             table_gen = TableGenerator(console)
-            table_gen.generate_summary_table(result.modelspecs)
+            table_gen.generate_summary_table(
+                result.modelspecs,
+                gpu_cost_override=gpu_cost,
+                unallocated_nodes=result.unallocated_nodes,
+                node_cost_override=node_cost,
+            )
         
         elif output_format == "yaml":
             yaml_gen = YAMLGenerator()
