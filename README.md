@@ -71,7 +71,8 @@ No flags needed. PIQC connects to your current kubectl context, scans all namesp
 ### 💰 Revenue Leak Detection
 - **Idle GPU waste** — Deployments with utilization below 60% threshold, with dollar waste per day and annualized
 - **Unallocated nodes** — GPU nodes with no pods scheduled (dark capacity still being paid for)
-- **Cost Summary panel** — Total spend rate, both leak categories, and total estimated leak per day / per year
+- **Tier misplacement** — Models running on a GPU tier beyond what their parameter count requires (e.g. a 7B model on an H100), with estimated cost delta per day
+- **Cost Summary panel** — Total spend rate, all three leak categories, and total estimated leak per day / per year
 - **MFU (Model FLOPS Utilization)** — Observed compute vs. theoretical GPU peak per deployment
 - **Cost per 1K tokens** — Translate GPU spend into a business metric comparable to API pricing
 
@@ -88,6 +89,7 @@ No flags needed. PIQC connects to your current kubectl context, scans all namesp
 - **RBAC Support**: Pre-configured ClusterRole and ServiceAccount manifests
 - **Flexible Modes**: Auto-detect, remote (kubeconfig), or in-cluster execution
 - **Timeout Controls**: Configurable operation timeouts
+- **Docker Image**: Pre-built multi-platform image (`linux/amd64` + `linux/arm64`) available on GitHub Container Registry — no install required
 
 ### 🔮 Coming Soon
 
@@ -121,6 +123,17 @@ Discovery and documentation for distributed LLM inference:
 ---
 
 ## 🚀 Quick Start
+
+### Run with Docker (no install required)
+
+```bash
+docker run --rm \
+  -v ~/.kube/config:/root/.kube/config \
+  ghcr.io/paralleliq/piqc:latest \
+  scan --format table
+```
+
+Works on any machine with Docker. The image supports both `linux/amd64` and `linux/arm64`.
 
 ### Test Your Connection
 
@@ -197,6 +210,7 @@ piqc scan [OPTIONS]
 | `--no-exec` | `false` | Disable pod exec (skip GPU metrics) |
 | `--no-logs` | `false` | Disable log reading |
 | `--aggregate/--no-aggregate` | `aggregate` | Aggregate metrics across pod replicas |
+| `--contribute-benchmarks` | `false` | Contribute anonymized GPU/model performance data to the ParallelIQ benchmark dataset |
 
 #### Output Options
 
@@ -247,6 +261,12 @@ piqc scan --no-aggregate
 
 # Full verbose debug mode
 piqc scan -v --debug
+
+# Contribute anonymized GPU/model benchmarks to ParallelIQ dataset
+piqc scan --contribute-benchmarks
+
+# Preview what benchmark data would be sent (no identifying info)
+piqc scan --contribute-benchmarks --verbose
 ```
 
 ---
@@ -352,28 +372,36 @@ Same structure as YAML but in JSON format, ideal for programmatic processing.
 Default output of `piqc scan` — no flags required:
 
 ```
-                              Discovered Inference Deployments
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
-┃ Deployment                   ┃ Engine  ┃ GPU               ┃ Replicas ┃ GPU Util ┃ MFU    ┃ $/1K tokens┃ $/hr   ┃ Idle $/day   ┃ Namespace      ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
-│ meta-llama/Llama-3-70B-Inst  │ vllm    │ 8xA100-SXM4-80GB  │        2 │       4% │   3.1% │    $0.0842 │ $56.00 │   $1,290.24  │ production     │
-│ mistral-7b-instruct          │ vllm    │ 1xA100-SXM4-40GB  │        1 │      11% │   8.4% │    $0.0156 │  $2.50 │      $53.40  │ production     │
-│ codellama-34b-staging        │ vllm    │ 4xA100-SXM4-80GB  │        1 │       0% │   0.0% │        N/A │ $14.00 │     $336.00  │ staging        │
-│ embedding-bge-large          │ vllm    │ 1xT4              │        3 │      82% │  51.2% │    $0.0003 │  $1.35 │       $5.83  │ shared-services│
-│ unknown-runtime-7f3a2        │ unknown │ 2xA100-SXM4-80GB  │        1 │      N/A │    N/A │        N/A │  $7.00 │ util unknown │ ml-platform    │
-└──────────────────────────────┴─────────┴───────────────────┴──────────┴──────────┴────────┴────────────┴────────┴──────────────┴────────────────┘
+                                                    Discovered Inference Deployments
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
+┃ Deployment                  ┃ Engine  ┃ GPU              ┃ Replicas ┃ GPU Util ┃  MFU ┃ $/1K tokens ┃   $/hr ┃   Idle $/day ┃   Tier Fit   ┃ Namespace       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
+│ meta-llama/Llama-3-70B-Inst │ vllm    │ 8xH100-SXM4-80GB │        2 │       4% │ 3.1% │     $0.0842 │ $68.00 │    $1,566.72 │ ⚠ >A100-80GB │ production      │
+│ mistral-7b-instruct         │ vllm    │ 1xA100-SXM4-40GB │        1 │      11% │ 8.4% │     $0.0073 │  $2.50 │       $53.40 │    ⚠ >T4     │ production      │
+│ codellama-34b-staging       │ vllm    │ 4xH100-SXM4-80GB │        1 │       0% │  N/A │         N/A │ $17.00 │      $408.00 │ ⚠ >A100-40GB │ staging         │
+│ embedding-bge-large         │ vllm    │ 1xT4             │        3 │      82% │  N/A │     $0.0002 │  $1.35 │        $5.83 │      ✓       │ shared-services │
+│ unknown-runtime-7f3a2       │ unknown │ 2xA100-SXM4-80GB │        1 │      N/A │  N/A │         N/A │  $7.00 │ util unknown │      ?       │ ml-platform     │
+└─────────────────────────────┴─────────┴──────────────────┴──────────┴──────────┴──────┴─────────────┴────────┴──────────────┴──────────────┴─────────────────┘
 
-╭──────────────────────────────────────── Cost Summary ──────────────────────────────────────────╮
-│   Total GPU spend rate     : $80.85/hr                                                         │
-│                                                                                                │
-│   Leased & idle (util <60%): $1,685.47/day  (pods running, GPUs underused)                    │
-│   Unallocated nodes        :   $336.00/day  (4 GPU(s) with no pods scheduled)                 │
-│                                                                                                │
-│   Total estimated leak     : $2,021.47/day  ($737,836/yr)                                     │
-│                                                                                                │
-│   Avg MFU (active deployments) : 15.7%  (healthy range: 30-60%)                               │
-╰────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────── Cost Summary ──────────────────────────────────────╮
+│   Total GPU spend rate     : $95.85/hr                                                 │
+│                                                                                        │
+│   Leased & idle (util <60%) : $2,033.95/day  (pods running, GPUs underused)            │
+│   Unallocated nodes        : $1,152.00/day  (12 GPU(s) with no pods scheduled)         │
+│   Tier misplacement        :   $721.20/day  (3 model(s) on oversized GPU tier)         │
+│                                                                                        │
+│   Total estimated leak     : $3,907.15/day  ($1,426,110/yr)                            │
+│                                                                                        │
+│   Avg MFU (active deployments) : 15.7%  (healthy range: 30–60%)                        │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
 ```
+
+**Tier Fit column:**
+| Symbol | Meaning |
+|--------|---------|
+| `✓` | Model is on an appropriate GPU tier for its size |
+| `⚠ >T4` | Model is over-provisioned — minimum sufficient tier shown |
+| `?` | Parameter count not parseable from model name |
 
 ### PIQC Facts Bundle
 
