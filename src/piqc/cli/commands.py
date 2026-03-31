@@ -176,6 +176,12 @@ def main() -> None:
     metavar="DOLLARS",
     help="Override cost in $/GPU/hr for unallocated nodes. Defaults to --gpu-cost if set.",
 )
+@click.option(
+    "--contribute-benchmarks",
+    is_flag=True,
+    default=False,
+    help="Contribute anonymized GPU/model performance data to the ParallelIQ benchmark dataset.",
+)
 def scan(
     kubeconfig: Optional[str],
     context: Optional[str],
@@ -195,6 +201,7 @@ def scan(
     output_piqc: bool,
     gpu_cost: Optional[float],
     node_cost: Optional[float],
+    contribute_benchmarks: bool,
 ) -> None:
     """
     Scan Kubernetes cluster for vLLM model deployments.
@@ -376,6 +383,22 @@ def scan(
         print_info("No inference deployments found.")
         console.print()
     
+    # Contribute anonymized benchmarks if requested
+    if contribute_benchmarks and result.modelspecs:
+        from piqc import __version__
+        from piqc.telemetry import contribute
+        sent, records = contribute(result.modelspecs, __version__)
+        if sent > 0:
+            console.print(f"[dim]  Contributed {sent} anonymized benchmark record(s) to paralleliq.ai[/dim]")
+            if verbose:
+                import json
+                console.print("[dim]  Payload (no identifying info):[/dim]")
+                for r in records:
+                    console.print(f"[dim]    {json.dumps(r)}[/dim]")
+        else:
+            console.print("[dim]  Benchmark contribution failed (non-fatal) — check connectivity[/dim]")
+        console.print()
+
     # Print timing
     print_info(f"Scan completed in {format_duration(result.duration_seconds)}")
     
