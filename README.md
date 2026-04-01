@@ -130,9 +130,7 @@ The simplest way — runs inside your cluster with no Docker auth or kubeconfig 
 
 **Step 1 — Apply RBAC permissions (one-time setup):**
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/paralleliq/piqc/main/rbac/serviceaccount.yaml
-kubectl apply -f https://raw.githubusercontent.com/paralleliq/piqc/main/rbac/clusterrole.yaml
-kubectl apply -f https://raw.githubusercontent.com/paralleliq/piqc/main/rbac/clusterrolebinding.yaml
+kubectl apply -f https://raw.githubusercontent.com/paralleliq/piqc/main/deploy/rbac.yaml
 ```
 
 **Step 2 — Run the scan:**
@@ -533,7 +531,7 @@ poetry run pytest tests/unit --cov=src/piqc
 PIQC requires specific Kubernetes permissions. Apply the provided RBAC manifests:
 
 ```bash
-kubectl apply -f rbac/
+kubectl apply -f https://raw.githubusercontent.com/paralleliq/piqc/main/deploy/rbac.yaml
 ```
 
 ### Required Permissions
@@ -604,7 +602,7 @@ kubectl auth can-i list pods --all-namespaces
 kubectl auth can-i create pods/exec -n <namespace>
 
 # Apply RBAC manifests
-kubectl apply -f rbac/
+kubectl apply -f https://raw.githubusercontent.com/paralleliq/piqc/main/deploy/rbac.yaml
 ```
 
 ### GPU Metrics Unavailable
