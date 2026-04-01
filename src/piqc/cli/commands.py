@@ -119,8 +119,8 @@ def main() -> None:
 @click.option(
     "--workers",
     type=int,
-    default=5,
-    help="Number of parallel workers. Default: 5",
+    default=10,
+    help="Number of parallel workers. Default: 10",
 )
 @click.option(
     "--verbose",
