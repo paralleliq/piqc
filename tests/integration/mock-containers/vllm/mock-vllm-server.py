@@ -99,19 +99,56 @@ def chat_completions():
 
 @app.route("/metrics", methods=["GET"])
 def metrics():
-    """Prometheus metrics endpoint (mock)."""
-    metrics_text = f"""
-# HELP vllm_num_requests_running Number of requests running
+    """Prometheus metrics endpoint (mock with realistic production-like values)."""
+    metrics_text = f"""# HELP vllm_num_requests_running Number of requests currently being processed
 # TYPE vllm_num_requests_running gauge
 vllm_num_requests_running{{model_name="{SERVED_MODEL_NAME}"}} 5
 
-# HELP vllm_num_requests_waiting Number of requests waiting
+# HELP vllm_num_requests_waiting Number of requests waiting in queue
 # TYPE vllm_num_requests_waiting gauge
 vllm_num_requests_waiting{{model_name="{SERVED_MODEL_NAME}"}} 2
 
-# HELP vllm_gpu_cache_usage_perc GPU KV-cache usage
+# HELP vllm_num_requests_swapped Number of requests swapped to CPU
+# TYPE vllm_num_requests_swapped gauge
+vllm_num_requests_swapped{{model_name="{SERVED_MODEL_NAME}"}} 0
+
+# HELP vllm_gpu_cache_usage_perc GPU KV-cache usage. 1 means 100 percent usage.
 # TYPE vllm_gpu_cache_usage_perc gauge
-vllm_gpu_cache_usage_perc{{model_name="{SERVED_MODEL_NAME}"}} 0.75
+vllm_gpu_cache_usage_perc{{model_name="{SERVED_MODEL_NAME}"}} 0.62
+
+# HELP vllm_cpu_cache_usage_perc CPU KV-cache usage. 1 means 100 percent usage.
+# TYPE vllm_cpu_cache_usage_perc gauge
+vllm_cpu_cache_usage_perc{{model_name="{SERVED_MODEL_NAME}"}} 0.0
+
+# HELP vllm_avg_prompt_throughput_toks_per_s Average prefill throughput in tokens/s
+# TYPE vllm_avg_prompt_throughput_toks_per_s gauge
+vllm_avg_prompt_throughput_toks_per_s{{model_name="{SERVED_MODEL_NAME}"}} 312.5
+
+# HELP vllm_avg_generation_throughput_toks_per_s Average generation throughput in tokens/s
+# TYPE vllm_avg_generation_throughput_toks_per_s gauge
+vllm_avg_generation_throughput_toks_per_s{{model_name="{SERVED_MODEL_NAME}"}} 47.3
+
+# HELP vllm_prompt_tokens_total Total number of prefill tokens processed
+# TYPE vllm_prompt_tokens_total counter
+vllm_prompt_tokens_total{{model_name="{SERVED_MODEL_NAME}"}} 1482910
+
+# HELP vllm_generation_tokens_total Total number of generation tokens processed
+# TYPE vllm_generation_tokens_total counter
+vllm_generation_tokens_total{{model_name="{SERVED_MODEL_NAME}"}} 224680
+
+# HELP vllm_request_success_total Total number of successful requests
+# TYPE vllm_request_success_total counter
+vllm_request_success_total{{model_name="{SERVED_MODEL_NAME}",finished_reason="stop"}} 18234
+
+# HELP vllm_time_to_first_token_seconds Histogram of time to first token
+# TYPE vllm_time_to_first_token_seconds histogram
+vllm_time_to_first_token_seconds_bucket{{model_name="{SERVED_MODEL_NAME}",le="0.1"}} 1200
+vllm_time_to_first_token_seconds_bucket{{model_name="{SERVED_MODEL_NAME}",le="0.5"}} 8900
+vllm_time_to_first_token_seconds_bucket{{model_name="{SERVED_MODEL_NAME}",le="1.0"}} 15200
+vllm_time_to_first_token_seconds_bucket{{model_name="{SERVED_MODEL_NAME}",le="2.0"}} 17800
+vllm_time_to_first_token_seconds_bucket{{model_name="{SERVED_MODEL_NAME}",le="+Inf"}} 18234
+vllm_time_to_first_token_seconds_sum{{model_name="{SERVED_MODEL_NAME}"}} 9847.2
+vllm_time_to_first_token_seconds_count{{model_name="{SERVED_MODEL_NAME}"}} 18234
 """
     return metrics_text, 200, {"Content-Type": "text/plain"}
 
