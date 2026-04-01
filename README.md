@@ -11,6 +11,8 @@
   <strong>Kubernetes AI/ML Introspector for vLLM Deployments</strong>
   <br/>
   <em>One command. See which GPUs are leaking money and why.</em>
+  <br/><br/>
+  <strong>🔒 Read-only</strong> — no agents, no sidecars, nothing installed permanently. Runs as a Job, prints results, exits.
 </p>
 
 <p align="center">
@@ -25,7 +27,9 @@
 
 ## 🎯 Overview
 
-**PIQC** (Production Inference Quality Control) is a Kubernetes-native tool that discovers AI/ML inference deployments, measures their efficiency, and surfaces the dollar cost of idle and unallocated GPUs — in a single command.
+**PIQC** (Production Inference Quality Control) is a **read-only** Kubernetes-native tool that discovers AI/ML inference deployments, measures their efficiency, and surfaces the dollar cost of idle and unallocated GPUs — in a single command.
+
+> **Nothing is installed permanently.** PIQC runs as a Kubernetes Job using a scoped read-only service account. It collects data, prints the report, and exits. No agents, no sidecars, no cluster modifications.
 
 ```
 piqc scan
@@ -528,7 +532,9 @@ poetry run pytest tests/unit --cov=src/piqc
 
 ## 🔐 Kubernetes RBAC Requirements
 
-PIQC requires specific Kubernetes permissions. Apply the provided RBAC manifests:
+PIQC is **read-only**. It never creates, modifies, or deletes any resource in your cluster. The only write permission is `pods/exec` (to run `nvidia-smi` inside pods for GPU metrics) and `pods/exec` can be disabled with `--no-exec`.
+
+Apply the provided RBAC manifests:
 
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/paralleliq/piqc/main/deploy/rbac.yaml
