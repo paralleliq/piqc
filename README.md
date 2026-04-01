@@ -124,16 +124,65 @@ Discovery and documentation for distributed LLM inference:
 
 ## 🚀 Quick Start
 
-### Run with Docker (no install required)
+### Option 1: Run as a Kubernetes Job (recommended)
+
+The simplest way — runs inside your cluster with no Docker auth or kubeconfig wrangling:
+
+**Step 1 — Apply RBAC permissions (one-time setup):**
+```bash
+kubectl apply -f https://raw.githubusercontent.com/paralleliq/piqc/main/rbac/serviceaccount.yaml
+kubectl apply -f https://raw.githubusercontent.com/paralleliq/piqc/main/rbac/clusterrole.yaml
+kubectl apply -f https://raw.githubusercontent.com/paralleliq/piqc/main/rbac/clusterrolebinding.yaml
+```
+
+**Step 2 — Run the scan:**
+```bash
+kubectl apply -f https://raw.githubusercontent.com/paralleliq/piqc/main/deploy/scan-job.yaml
+```
+
+**Step 3 — View the output:**
+```bash
+kubectl logs -f job/piqc-scan -n kube-system
+```
+
+**Clean up when done:**
+```bash
+kubectl delete job piqc-scan -n kube-system
+```
+
+> The job auto-deletes itself after 10 minutes (`ttlSecondsAfterFinished: 600`).
+
+---
+
+### Option 2: Run with Docker from your laptop
+
+For laptops and CI pipelines. Requires exporting a static kubeconfig first (avoids cloud auth plugin issues):
 
 ```bash
+# Export a static kubeconfig with embedded credentials
+kubectl config view --raw --flatten > /tmp/piqc-kubeconfig.yaml
+
+# Run the scan
 docker run --rm \
-  -v ~/.kube/config:/root/.kube/config \
+  -v /tmp/piqc-kubeconfig.yaml:/root/.kube/config \
   ghcr.io/paralleliq/piqc:latest \
   scan --format table
 ```
 
-Works on any machine with Docker. The image supports both `linux/amd64` and `linux/arm64`.
+The image supports both `linux/amd64` and `linux/arm64`.
+
+---
+
+### Option 3: Install from source
+
+```bash
+git clone https://github.com/paralleliq/piqc.git
+cd piqc
+poetry install
+poetry run piqc scan --format table
+```
+
+---
 
 ### Test Your Connection
 
@@ -522,6 +571,17 @@ rbac/
 ---
 
 ## 🐛 Troubleshooting
+
+### Docker Auth Plugin Errors (GKE / EKS / AKS)
+
+If you see `gke-gcloud-auth-plugin not found` or similar errors when using Docker, use the
+in-cluster Job approach (Option 1 above) — it runs inside the cluster and needs no auth plugins.
+
+Alternatively, export a static kubeconfig:
+```bash
+kubectl config view --raw --flatten > /tmp/piqc-kubeconfig.yaml
+docker run --rm -v /tmp/piqc-kubeconfig.yaml:/root/.kube/config ghcr.io/paralleliq/piqc:latest scan
+```
 
 ### Connection Issues
 

@@ -83,6 +83,10 @@ output/
 !tests/integration/**/*.yaml
 !tests/integration/**/*.yml
 !rbac/*.yaml
+!rbac/*.yml
+!deploy/*.yaml
+!deploy/*.yml
+!rbac/*.yaml
 !k8s/*.yaml
 !k8s/*.yml
 !examples/*.yaml
