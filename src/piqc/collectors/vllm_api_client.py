@@ -263,11 +263,30 @@ class KubectlExecVLLMClient:
     def _exec_curl(self, endpoint: str) -> Optional[str]:
         """Execute HTTP request inside pod via kubectl exec.
 
-        Tries curl first, falls back to python3 urllib if curl is not available.
+        Uses python3 urllib — always available in vLLM containers since
+        vLLM is Python-based. Falls back to curl if python3 is not found.
         """
         url = f"http://localhost:{self.port}{endpoint}"
 
-        # Try curl first
+        # Try python3 first — guaranteed in any vLLM container
+        try:
+            python_cmd = (
+                "import urllib.request; "
+                "print(urllib.request.urlopen("
+                f'"{url}", timeout={self.timeout}'
+                ").read().decode())"
+            )
+            stdout, stderr = self.k8s_client.exec_in_pod(
+                pod_name=self.pod_name,
+                namespace=self.namespace,
+                command=["python3", "-c", python_cmd],
+            )
+            if stdout is not None and "executable file not found" not in (stderr or ""):
+                return stdout
+        except Exception as e:
+            logger.debug(f"kubectl exec python3 failed for {endpoint}: {e}")
+
+        # Fall back to curl
         try:
             stdout, stderr = self.k8s_client.exec_in_pod(
                 pod_name=self.pod_name,
@@ -277,23 +296,9 @@ class KubectlExecVLLMClient:
             if stdout is not None and "executable file not found" not in (stderr or ""):
                 return stdout
         except Exception as e:
-            logger.debug(f"kubectl exec curl failed for {endpoint}: {e}")
+            logger.debug(f"kubectl exec curl fallback failed for {endpoint}: {e}")
 
-        # Fall back to python3 urllib
-        try:
-            python_cmd = (
-                f"import urllib.request; "
-                f"print(urllib.request.urlopen('{url}', timeout={self.timeout}).read().decode())"
-            )
-            stdout, stderr = self.k8s_client.exec_in_pod(
-                pod_name=self.pod_name,
-                namespace=self.namespace,
-                command=["python3", "-c", python_cmd],
-            )
-            return stdout if stdout is not None else None
-        except Exception as e:
-            logger.debug(f"kubectl exec python3 fallback failed for {endpoint}: {e}")
-            return None
+        return None
     
     def get_health(self) -> bool:
         """Check vLLM server health via kubectl exec."""
