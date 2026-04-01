@@ -25,7 +25,8 @@ from piqc.utils.exceptions import (
 from piqc.utils.logger import setup_logging, get_logger
 
 
-console = Console()
+# Use a wide fixed width when running without a TTY (e.g. kubectl logs, CI)
+console = Console() if sys.stdout.isatty() else Console(width=220, force_terminal=True)
 logger = get_logger(__name__)
 
 
