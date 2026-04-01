@@ -79,11 +79,9 @@ spec:
             requests:
               cpu: "500m"
               memory: "512Mi"
-              nvidia.com/gpu: "1"
             limits:
               cpu: "1"
               memory: "1Gi"
-              nvidia.com/gpu: "1"
 ---
 apiVersion: v1
 kind: Service
