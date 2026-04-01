@@ -475,10 +475,30 @@ class VLLMAPIClient:
             raw_metrics = self.get_metrics_raw()
             parsed = self._parser.parse(raw_metrics)
             self._populate_metrics(metrics, parsed)
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Failed to get Prometheus metrics: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to get Prometheus metrics via kubectl exec: {e}")
 
         return metrics
+
+    @staticmethod
+    def _scalar(value: Any, default: float = 0.0) -> float:
+        """Extract a scalar float from a metric value that may be a labeled dict."""
+        if value is None:
+            return default
+        if isinstance(value, dict):
+            return sum(value.values()) if value else default
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _get(self, parsed: dict[str, Any], *keys: str) -> Any:
+        """Return first non-None value from parsed dict for given keys."""
+        for key in keys:
+            v = parsed.get(key)
+            if v is not None:
+                return v
+        return None
 
     def _populate_metrics(
         self,
@@ -487,63 +507,39 @@ class VLLMAPIClient:
     ) -> None:
         """Populate VLLMRuntimeMetrics from parsed Prometheus data."""
 
+        s = self._scalar
+
         # Request metrics
-        metrics.requests.running = int(
-            parsed.get('vllm:num_requests_running', 0) or
-            parsed.get('vllm_num_requests_running', 0)
-        )
-        metrics.requests.waiting = int(
-            parsed.get('vllm:num_requests_waiting', 0) or
-            parsed.get('vllm_num_requests_waiting', 0)
-        )
-        metrics.requests.swapped = int(
-            parsed.get('vllm:num_requests_swapped', 0) or
-            parsed.get('vllm_num_requests_swapped', 0)
-        )
-        metrics.requests.success_total = int(
-            parsed.get('vllm:request_success_total', 0) or
-            parsed.get('vllm_request_success_total', 0)
-        )
+        metrics.requests.running = int(s(self._get(parsed,
+            'vllm:num_requests_running', 'vllm_num_requests_running')))
+        metrics.requests.waiting = int(s(self._get(parsed,
+            'vllm:num_requests_waiting', 'vllm_num_requests_waiting')))
+        metrics.requests.swapped = int(s(self._get(parsed,
+            'vllm:num_requests_swapped', 'vllm_num_requests_swapped')))
+        metrics.requests.success_total = int(s(self._get(parsed,
+            'vllm:request_success_total', 'vllm_request_success_total')))
 
         # Cache metrics
-        metrics.cache.gpu_cache_usage_percent = float(
-            parsed.get('vllm:gpu_cache_usage_perc', 0) or
-            parsed.get('vllm_gpu_cache_usage_perc', 0)
-        )
-        metrics.cache.cpu_cache_usage_percent = float(
-            parsed.get('vllm:cpu_cache_usage_perc', 0) or
-            parsed.get('vllm_cpu_cache_usage_perc', 0)
-        )
-        metrics.cache.prefix_cache_hit_rate = float(
-            parsed.get('vllm:cpu_prefix_cache_hit_rate', 0) or
-            parsed.get('vllm_cpu_prefix_cache_hit_rate', 0)
-        )
-        metrics.cache.prefix_cache_queries = int(
-            parsed.get('vllm:prefix_cache_queries', 0) or
-            parsed.get('vllm_prefix_cache_queries', 0)
-        )
-        metrics.cache.prefix_cache_hits = int(
-            parsed.get('vllm:prefix_cache_hits', 0) or
-            parsed.get('vllm_prefix_cache_hits', 0)
-        )
+        metrics.cache.gpu_cache_usage_percent = s(self._get(parsed,
+            'vllm:gpu_cache_usage_perc', 'vllm_gpu_cache_usage_perc'))
+        metrics.cache.cpu_cache_usage_percent = s(self._get(parsed,
+            'vllm:cpu_cache_usage_perc', 'vllm_cpu_cache_usage_perc'))
+        metrics.cache.prefix_cache_hit_rate = s(self._get(parsed,
+            'vllm:cpu_prefix_cache_hit_rate', 'vllm_cpu_prefix_cache_hit_rate'))
+        metrics.cache.prefix_cache_queries = int(s(self._get(parsed,
+            'vllm:prefix_cache_queries', 'vllm_prefix_cache_queries')))
+        metrics.cache.prefix_cache_hits = int(s(self._get(parsed,
+            'vllm:prefix_cache_hits', 'vllm_prefix_cache_hits')))
 
         # Throughput metrics
-        metrics.throughput.prompt_tokens_total = int(
-            parsed.get('vllm:prompt_tokens_total', 0) or
-            parsed.get('vllm_prompt_tokens_total', 0)
-        )
-        metrics.throughput.generation_tokens_total = int(
-            parsed.get('vllm:generation_tokens_total', 0) or
-            parsed.get('vllm_generation_tokens_total', 0)
-        )
-        metrics.throughput.prompt_tokens_per_second = float(
-            parsed.get('vllm:avg_prompt_throughput_toks_per_s', 0) or
-            parsed.get('vllm_avg_prompt_throughput_toks_per_s', 0)
-        )
-        metrics.throughput.generation_tokens_per_second = float(
-            parsed.get('vllm:avg_generation_throughput_toks_per_s', 0) or
-            parsed.get('vllm_avg_generation_throughput_toks_per_s', 0)
-        )
+        metrics.throughput.prompt_tokens_total = int(s(self._get(parsed,
+            'vllm:prompt_tokens_total', 'vllm_prompt_tokens_total')))
+        metrics.throughput.generation_tokens_total = int(s(self._get(parsed,
+            'vllm:generation_tokens_total', 'vllm_generation_tokens_total')))
+        metrics.throughput.prompt_tokens_per_second = s(self._get(parsed,
+            'vllm:avg_prompt_throughput_toks_per_s', 'vllm_avg_prompt_throughput_toks_per_s'))
+        metrics.throughput.generation_tokens_per_second = s(self._get(parsed,
+            'vllm:avg_generation_throughput_toks_per_s', 'vllm_avg_generation_throughput_toks_per_s'))
 
         # Latency metrics (from histogram percentiles)
         ttft_percentiles = parsed.get('vllm:time_to_first_token_seconds_percentiles', {})
