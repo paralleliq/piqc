@@ -8,6 +8,7 @@ metadata:
     app.kubernetes.io/part-of: piqc
 spec:
   ttlSecondsAfterFinished: 600
+  activeDeadlineSeconds: 120
   template:
     metadata:
       labels:
