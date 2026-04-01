@@ -110,6 +110,28 @@ GPU_RESOURCE_KEYS = {
     "gpu.intel.com/i915",
 }
 
+# =============================================================================
+# Known GPU infrastructure pods to exclude (not inference workloads)
+# =============================================================================
+
+# Image substrings that identify GPU system/monitoring daemons, not inference
+INFRA_IMAGE_PATTERNS = [
+    re.compile(r"dcgm.exporter", re.IGNORECASE),
+    re.compile(r"nvidia.device.plugin", re.IGNORECASE),
+    re.compile(r"nvidia-device-plugin", re.IGNORECASE),
+    re.compile(r"gpu-feature-discovery", re.IGNORECASE),
+    re.compile(r"node-feature-discovery", re.IGNORECASE),
+    re.compile(r"k8s-device-plugin", re.IGNORECASE),
+]
+
+# Pod name prefixes that identify well-known GPU infrastructure DaemonSets
+INFRA_NAME_PATTERNS = [
+    re.compile(r"^dcgm-exporter", re.IGNORECASE),
+    re.compile(r"^nvidia-gpu-device-plugin", re.IGNORECASE),
+    re.compile(r"^gpu-feature-discovery", re.IGNORECASE),
+    re.compile(r"^node-feature-discovery", re.IGNORECASE),
+]
+
 
 class FrameworkDetector:
     """
@@ -137,15 +159,19 @@ class FrameworkDetector:
             Framework is "vllm" or "unknown".
             Confidence is a float from 0.0 to 1.0.
         """
+        # Exclude known GPU infrastructure daemons (dcgm-exporter, device plugins, etc.)
+        if self._is_gpu_infra_pod(pod):
+            return "unknown", 0.0
+
         # Check vLLM
         vllm_confidence = self._calculate_vllm_confidence(pod)
         if vllm_confidence >= 0.2:  # Threshold for positive detection
             return "vllm", vllm_confidence
-        
+
         # Check if it's at least an ML workload
         if self._is_ml_workload(pod):
             return "unknown", 0.1
-        
+
         return "unknown", 0.0
     
     def _calculate_vllm_confidence(self, pod: V1Pod) -> float:
@@ -196,6 +222,18 @@ class FrameworkDetector:
     
 
     
+    def _is_gpu_infra_pod(self, pod: V1Pod) -> bool:
+        """Return True if this pod is a GPU infrastructure daemon, not an inference workload."""
+        pod_name = (pod.metadata.name or "") if pod.metadata else ""
+        for pattern in INFRA_NAME_PATTERNS:
+            if pattern.search(pod_name):
+                return True
+        for container in self._get_all_containers(pod):
+            for pattern in INFRA_IMAGE_PATTERNS:
+                if pattern.search(container.image or ""):
+                    return True
+        return False
+
     def _is_ml_workload(self, pod: V1Pod) -> bool:
         """Check if the pod is likely an ML workload."""
         # Check for GPU resources
