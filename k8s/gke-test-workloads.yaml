@@ -14,7 +14,7 @@ metadata:
     app: vllm-llama3-70b
     app.kubernetes.io/name: vllm
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: vllm-llama3-70b
@@ -168,11 +168,9 @@ spec:
             requests:
               cpu: "500m"
               memory: "512Mi"
-              nvidia.com/gpu: "1"
             limits:
               cpu: "1"
               memory: "1Gi"
-              nvidia.com/gpu: "1"
 ---
 apiVersion: v1
 kind: Service
@@ -251,11 +249,9 @@ spec:
             requests:
               cpu: "500m"
               memory: "512Mi"
-              nvidia.com/gpu: "1"
             limits:
               cpu: "1"
               memory: "1Gi"
-              nvidia.com/gpu: "1"
 ---
 apiVersion: v1
 kind: Namespace
