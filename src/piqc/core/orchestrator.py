@@ -287,8 +287,8 @@ class ScanOrchestrator:
                 gpu_infos.append(GPUInfo(
                     index=i,
                     type=fake_model,
-                    memory_total=int(fake_mem_total) if fake_mem_total else None,
-                    memory_used=int(fake_mem_used) if fake_mem_used else None,
+                    memory_total=fake_mem_total if fake_mem_total else None,
+                    memory_used=fake_mem_used if fake_mem_used else None,
                     utilization=int(fake_util) if fake_util else None,
                 ))
             has_gpu_metrics = bool(gpu_infos)
