@@ -275,6 +275,24 @@ class ScanOrchestrator:
         warnings: list[str] = []
         errors: list[str] = []
         
+        # If no GPU resource request but FAKE_GPU env vars are present (test workloads),
+        # use the env vars to synthesize GPU info directly without exec.
+        if deployment.gpu_count == 0 and deployment.env_vars.get("FAKE_GPU_MODEL"):
+            fake_count = int(deployment.env_vars.get("FAKE_GPU_COUNT", "1"))
+            fake_model = deployment.env_vars["FAKE_GPU_MODEL"]
+            fake_util = deployment.env_vars.get("FAKE_GPU_UTILIZATION")
+            fake_mem_total = deployment.env_vars.get("FAKE_GPU_MEMORY_TOTAL")
+            fake_mem_used = deployment.env_vars.get("FAKE_GPU_MEMORY_USED")
+            for i in range(fake_count):
+                gpu_infos.append(GPUInfo(
+                    index=i,
+                    type=fake_model,
+                    memory_total=int(fake_mem_total) if fake_mem_total else None,
+                    memory_used=int(fake_mem_used) if fake_mem_used else None,
+                    utilization=int(fake_util) if fake_util else None,
+                ))
+            has_gpu_metrics = bool(gpu_infos)
+
         # Collect GPU metrics if enabled
         if self.enable_exec and deployment.gpu_count > 0:
             for pod_name in deployment.pod_names[:1]:  # Just first pod for now
