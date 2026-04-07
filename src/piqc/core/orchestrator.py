@@ -384,7 +384,8 @@ class ScanOrchestrator:
                             collection_method = "vllm-api"
                         
                         vllm_metrics = api_client.get_runtime_metrics()
-                        
+                        logger.debug(f"Runtime metrics api_available={vllm_metrics.api_available} health={vllm_metrics.health_status} model={vllm_metrics.loaded_model}")
+
                         if vllm_metrics.api_available:
                             has_runtime_metrics = True
                             runtime_state = RuntimeState(
