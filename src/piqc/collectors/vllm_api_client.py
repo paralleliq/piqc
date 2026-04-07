@@ -548,9 +548,11 @@ class VLLMAPIClient:
                 'vllm:inter_token_latency_seconds_sum', 'vllm_inter_token_latency_seconds_sum'))
             itl_count = s(self._get(parsed,
                 'vllm:inter_token_latency_seconds_count', 'vllm_inter_token_latency_seconds_count'))
+            logger.debug(f"ITL fallback: sum={itl_sum} count={itl_count}")
             if itl_sum > 0 and itl_count > 0:
                 mean_itl = itl_sum / itl_count
                 metrics.throughput.generation_tokens_per_second = 1.0 / mean_itl
+                logger.debug(f"Derived throughput from ITL: {metrics.throughput.generation_tokens_per_second:.1f} tok/s")
 
         # Latency metrics (from histogram percentiles)
         ttft_percentiles = parsed.get('vllm:time_to_first_token_seconds_percentiles', {})

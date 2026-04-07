@@ -334,9 +334,7 @@ class ScanOrchestrator:
                             gpu_infos.append(GPUInfo(
                                 index=i,
                                 type=gpu_type,
-                                memory_total=None,
-                                memory_used=None,
-                                utilization=None,
+                                memory_total="unknown",
                             ))
                         has_gpu_metrics = bool(gpu_infos)
                         logger.debug(f"Inferred GPU type from node labels: {gpu_type}")
