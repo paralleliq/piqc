@@ -541,6 +541,17 @@ class VLLMAPIClient:
         metrics.throughput.generation_tokens_per_second = s(self._get(parsed,
             'vllm:avg_generation_throughput_toks_per_s', 'vllm_avg_generation_throughput_toks_per_s'))
 
+        # Fallback: derive generation throughput from inter-token latency histogram
+        # (vLLM 0.14+ removed avg_generation_throughput gauge, use 1/mean_ITL instead)
+        if metrics.throughput.generation_tokens_per_second == 0.0:
+            itl_sum = s(self._get(parsed,
+                'vllm:inter_token_latency_seconds_sum', 'vllm_inter_token_latency_seconds_sum'))
+            itl_count = s(self._get(parsed,
+                'vllm:inter_token_latency_seconds_count', 'vllm_inter_token_latency_seconds_count'))
+            if itl_sum > 0 and itl_count > 0:
+                mean_itl = itl_sum / itl_count
+                metrics.throughput.generation_tokens_per_second = 1.0 / mean_itl
+
         # Latency metrics (from histogram percentiles)
         ttft_percentiles = parsed.get('vllm:time_to_first_token_seconds_percentiles', {})
         if not ttft_percentiles:

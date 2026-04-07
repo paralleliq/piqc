@@ -310,6 +310,38 @@ class ScanOrchestrator:
                     warnings.append(f"{deployment.name}: {e.reason or 'GPU metrics unavailable'}")
                 except Exception as e:
                     warnings.append(f"{deployment.name}: GPU collection failed - {e}")
+
+        # Fallback: if no GPU info from nvidia-smi, infer GPU type from node labels
+        if not gpu_infos and deployment.gpu_count > 0:
+            try:
+                pods = self.k8s_client.list_pods(
+                    namespace=deployment.namespace,
+                    field_selector=f"metadata.name={deployment.pod_names[0]}",
+                )
+                if pods and pods[0].spec and pods[0].spec.node_name:
+                    node_name = pods[0].spec.node_name
+                    all_nodes = self.k8s_client.list_nodes()
+                    nodes = [n for n in all_nodes if n.metadata.name == node_name]
+                    if nodes:
+                        node_labels = nodes[0].metadata.labels or {}
+                        gpu_type = (
+                            node_labels.get("nvidia.com/gpu.product")
+                            or node_labels.get("cloud.google.com/gke-accelerator")
+                            or node_labels.get("node.kubernetes.io/instance-type")
+                            or "unknown"
+                        )
+                        for i in range(deployment.gpu_count):
+                            gpu_infos.append(GPUInfo(
+                                index=i,
+                                type=gpu_type,
+                                memory_total=None,
+                                memory_used=None,
+                                utilization=None,
+                            ))
+                        has_gpu_metrics = bool(gpu_infos)
+                        logger.debug(f"Inferred GPU type from node labels: {gpu_type}")
+            except Exception as e:
+                logger.debug(f"Failed to infer GPU type from node: {e}")
         
         # Parse framework-specific configuration
         model_info, inference_config = self._parse_config(deployment)
