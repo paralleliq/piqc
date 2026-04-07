@@ -623,17 +623,37 @@ def discover_vllm_service(
     # Fallback: Use kubectl exec for remote access
     try:
         for port in common_ports:
-            # Test if we can reach the API via kubectl exec
-            stdout, stderr = k8s_client.exec_in_pod(
-                pod_name=pod_name,
-                namespace=namespace,
-                command=["curl", "-s", "-m", "3", f"http://localhost:{port}/health"],
+            url = f"http://localhost:{port}/health"
+            # Try python3 urllib first (always available in vLLM containers)
+            python_cmd = (
+                "import urllib.request; "
+                f'r = urllib.request.urlopen("{url}", timeout=3); '
+                "print(r.status)"
             )
-            # Check stdout for success (empty response or HTTP 200 is OK for /health)
-            if stdout is not None and "error" not in stdout.lower() and "error" not in stderr.lower():
-                # Success! Use kubectl-exec method
-                logger.debug(f"Found vLLM API via kubectl exec on port {port}")
-                return ("kubectl-exec", port)
+            try:
+                stdout, stderr = k8s_client.exec_in_pod(
+                    pod_name=pod_name,
+                    namespace=namespace,
+                    command=["python3", "-c", python_cmd],
+                )
+                if stdout is not None and "executable file not found" not in (stderr or ""):
+                    logger.debug(f"Found vLLM API via kubectl exec (python3) on port {port}")
+                    return ("kubectl-exec", port)
+            except Exception:
+                pass
+
+            # Fall back to curl
+            try:
+                stdout, stderr = k8s_client.exec_in_pod(
+                    pod_name=pod_name,
+                    namespace=namespace,
+                    command=["curl", "-s", "-m", "3", url],
+                )
+                if stdout is not None and "error" not in stdout.lower() and "error" not in (stderr or "").lower():
+                    logger.debug(f"Found vLLM API via kubectl exec (curl) on port {port}")
+                    return ("kubectl-exec", port)
+            except Exception:
+                pass
 
     except Exception as e:
         logger.debug(f"kubectl exec service discovery failed: {e}")
