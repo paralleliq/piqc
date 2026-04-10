@@ -275,7 +275,7 @@ piqc scan [OPTIONS]
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--timeout INT` | `30` | Operation timeout in seconds |
-| `--workers INT` | `5` | Number of parallel workers |
+| `--workers INT` | `10` | Number of parallel workers |
 | `--mode [auto\|remote\|incluster\|dry-run]` | `auto` | Execution mode |
 | `-v, --verbose` | `false` | Enable verbose output |
 | `--debug` | `false` | Enable debug mode with detailed trace |
