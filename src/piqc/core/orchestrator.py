@@ -59,6 +59,21 @@ class UnallocatedNodeInfo:
 
 
 @dataclass
+class PendingGPUPod:
+    """A pod that is Pending due to insufficient GPU resources.
+
+    Represents active demand that cannot be satisfied given the current
+    cluster GPU layout. When paired with fragmented nodes, this signals
+    that rebalancing would unblock real workloads.
+    """
+
+    pod_name: str
+    namespace: str
+    gpus_needed: int
+    pending_minutes: float   # how long the pod has been waiting
+
+
+@dataclass
 class FragmentedNodeInfo:
     """A node with leftover GPU slots too small to fit any running model.
 
@@ -89,6 +104,7 @@ class ScanResult:
         self.deployments_found: int = 0
         self.unallocated_nodes: list[UnallocatedNodeInfo] = []
         self.fragmented_nodes: list[FragmentedNodeInfo] = []
+        self.pending_gpu_pods: list[PendingGPUPod] = []
     
     def add_warning(self, message: str) -> None:
         """Add a warning message."""
@@ -208,6 +224,12 @@ class ScanOrchestrator:
             )
         except Exception as e:
             result.add_warning(f"Fragmentation analysis failed: {e}")
+
+        # Detect pending pods waiting for GPU resources
+        try:
+            result.pending_gpu_pods = self._analyze_pending_gpu_pods()
+        except Exception as e:
+            result.add_warning(f"Pending GPU pod analysis failed: {e}")
 
         result.duration_seconds = time.time() - start_time
         
@@ -652,15 +674,15 @@ class ScanOrchestrator:
         """Identify nodes with stranded GPU slots that cannot fit any running model.
 
         A fragmented node has free GPU slots, but the count is smaller than
-        the minimum GPU footprint of any model in the cluster. Because GPUs
-        cannot be shared across nodes, those slots are permanently unusable
+        the minimum GPU footprint of any GPU workload in the cluster. Because
+        GPUs cannot be shared across nodes, those slots are permanently unusable
         until the node is rebalanced.
 
         Args:
             unallocated_nodes: Nodes with at least one free GPU slot (from
                 _analyze_node_capacity).
-            modelspecs: Discovered model deployments used to determine the
-                minimum GPU requirement in this cluster.
+            modelspecs: Discovered vLLM model deployments (used as one source
+                of GPU footprints; all running GPU pods are also consulted).
 
         Returns:
             List of FragmentedNodeInfo for nodes with stranded slots.
@@ -668,17 +690,40 @@ class ScanOrchestrator:
         if not unallocated_nodes:
             return []
 
-        # Derive minimum GPU count needed by any model in this cluster.
-        # gpu_count comes from ResourceInfo which is always populated.
-        gpu_footprints = [
-            spec.resources.gpu_count
-            for spec in modelspecs
-            if spec.resources and spec.resources.gpu_count and spec.resources.gpu_count > 0
-        ]
+        # Derive minimum GPU count from ALL running pods requesting GPUs —
+        # not just discovered vLLM modelspecs. This catches any GPU workload
+        # in the cluster, including non-vLLM frameworks.
+        gpu_footprints: list[int] = []
+
+        try:
+            all_pods = self.k8s_client.list_all_pods(
+                field_selector="status.phase=Running",
+            )
+            for pod in all_pods:
+                pod_gpus = 0
+                for container in (pod.spec.containers if pod.spec else []) or []:
+                    if not container.resources or not container.resources.requests:
+                        continue
+                    gpu_req = container.resources.requests.get("nvidia.com/gpu", "0")
+                    try:
+                        pod_gpus += int(gpu_req)
+                    except ValueError:
+                        pass
+                if pod_gpus > 0:
+                    gpu_footprints.append(pod_gpus)
+        except Exception as e:
+            logger.debug(f"Could not list pods for fragmentation analysis: {e}")
+
+        # Also include modelspec GPU counts as a fallback / supplement.
+        for spec in modelspecs:
+            if spec.resources and spec.resources.gpus:
+                count = len(spec.resources.gpus)
+                if count > 0:
+                    gpu_footprints.append(count)
 
         if not gpu_footprints:
-            # No models found — cannot determine fragmentation threshold.
-            logger.debug("Fragmentation analysis skipped: no model GPU footprints available")
+            # No GPU workloads found — cannot determine fragmentation threshold.
+            logger.debug("Fragmentation analysis skipped: no GPU workloads found in cluster")
             return []
 
         min_model_gpus = min(gpu_footprints)
@@ -704,3 +749,70 @@ class ScanOrchestrator:
                 )
 
         return fragmented
+
+    def _analyze_pending_gpu_pods(self) -> list[PendingGPUPod]:
+        """Find pods that are Pending due to insufficient GPU resources.
+
+        Reads all Pending pods and checks whether they are requesting GPUs.
+        These represent active demand that the cluster cannot currently satisfy —
+        the strongest signal that fragmentation or capacity is blocking real work.
+
+        Returns:
+            List of PendingGPUPod for pods waiting for GPU resources.
+        """
+        from datetime import timezone
+
+        try:
+            all_pods = self.k8s_client.list_all_pods(
+                field_selector="status.phase=Pending",
+            )
+        except Exception as e:
+            logger.debug(f"Could not list pending pods: {e}")
+            return []
+
+        pending: list[PendingGPUPod] = []
+        now = datetime.now(timezone.utc)
+
+        for pod in all_pods:
+            if not pod.spec:
+                continue
+
+            # Sum GPU requests across all containers in this pod
+            gpus_needed = 0
+            for container in (pod.spec.containers or []):
+                if not container.resources or not container.resources.requests:
+                    continue
+                gpu_req = container.resources.requests.get("nvidia.com/gpu", "0")
+                try:
+                    gpus_needed += int(gpu_req)
+                except ValueError:
+                    pass
+
+            if gpus_needed == 0:
+                continue
+
+            # Calculate how long the pod has been pending
+            pending_minutes = 0.0
+            if pod.metadata and pod.metadata.creation_timestamp:
+                created_at = pod.metadata.creation_timestamp
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+                pending_minutes = (now - created_at).total_seconds() / 60.0
+
+            pod_name = pod.metadata.name if pod.metadata else "unknown"
+            namespace = pod.metadata.namespace if pod.metadata else "unknown"
+
+            pending.append(
+                PendingGPUPod(
+                    pod_name=pod_name,
+                    namespace=namespace,
+                    gpus_needed=gpus_needed,
+                    pending_minutes=pending_minutes,
+                )
+            )
+            logger.debug(
+                f"Pending GPU pod {namespace}/{pod_name}: "
+                f"needs {gpus_needed} GPU(s), waiting {pending_minutes:.1f} min"
+            )
+
+        return pending

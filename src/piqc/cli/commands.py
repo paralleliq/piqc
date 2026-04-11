@@ -339,6 +339,7 @@ def scan(
                 unallocated_nodes=result.unallocated_nodes,
                 node_cost_override=node_cost,
                 fragmented_nodes=result.fragmented_nodes,
+                pending_gpu_pods=result.pending_gpu_pods,
             )
         
         elif output_format == "yaml":

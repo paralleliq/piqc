@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from piqc.core.orchestrator import FragmentedNodeInfo, UnallocatedNodeInfo
+from piqc.core.orchestrator import FragmentedNodeInfo, PendingGPUPod, UnallocatedNodeInfo
 from piqc.models.modelspec import ModelSpec
 from piqc.utils.logger import get_logger
 
@@ -157,6 +157,7 @@ class TableGenerator:
         unallocated_nodes: Optional[list[UnallocatedNodeInfo]] = None,
         node_cost_override: Optional[float] = None,
         fragmented_nodes: Optional[list[FragmentedNodeInfo]] = None,
+        pending_gpu_pods: Optional[list[PendingGPUPod]] = None,
     ) -> None:
         """
         Generate and print a summary table of all ModelSpecs.
@@ -167,6 +168,7 @@ class TableGenerator:
             unallocated_nodes: Nodes with unscheduled GPU capacity.
             node_cost_override: Optional $/GPU/hr override for unallocated node GPUs.
             fragmented_nodes: Nodes with stranded GPU slots too small for any model.
+            pending_gpu_pods: Pods waiting for GPU resources that cannot be scheduled.
         """
         if not modelspecs:
             self.console.print("[dim]No inference deployments found[/dim]")
@@ -232,7 +234,7 @@ class TableGenerator:
 
         self.console.print()
         self.console.print(table)
-        self.print_waste_summary(modelspecs, gpu_cost_override, unallocated_nodes, node_cost_override, fragmented_nodes)
+        self.print_waste_summary(modelspecs, gpu_cost_override, unallocated_nodes, node_cost_override, fragmented_nodes, pending_gpu_pods)
         self.console.print()
     
     def generate_detailed_table(self, modelspec: ModelSpec) -> None:
@@ -479,6 +481,7 @@ class TableGenerator:
         unallocated_nodes: Optional[list[UnallocatedNodeInfo]] = None,
         node_cost_override: Optional[float] = None,
         fragmented_nodes: Optional[list[FragmentedNodeInfo]] = None,
+        pending_gpu_pods: Optional[list[PendingGPUPod]] = None,
     ) -> None:
         """Print a cost summary panel below the table."""
         total_cost_hr = 0.0
@@ -495,9 +498,13 @@ class TableGenerator:
                 missing_util += 1
 
         # Category 2: unallocated node GPUs (dark capacity)
+        # Exclude fragmented nodes — they are counted separately and more precisely.
+        fragmented_node_names = {n.node_name for n in (fragmented_nodes or [])}
         dark_day = 0.0
         dark_gpu_count = 0
         for node in (unallocated_nodes or []):
+            if node.node_name in fragmented_node_names:
+                continue
             rate = self._estimate_gpu_cost(node.gpu_type, node_cost_override or gpu_cost_override)
             dark_day += rate * node.unallocated_gpus * 24.0
             dark_gpu_count += node.unallocated_gpus
@@ -547,6 +554,19 @@ class TableGenerator:
                 f"  Fragmented nodes         : [bold red]${frag_day:,.2f}/day[/bold red]"
                 f"  [dim]({frag_gpu_count} GPU(s) stranded — too few to fit any model)[/dim]"
             )
+
+        # Pending GPU pods — active demand blocked by insufficient GPU layout
+        if pending_gpu_pods:
+            for pod in pending_gpu_pods:
+                wait_str = (
+                    f"{pod.pending_minutes:.0f} min"
+                    if pod.pending_minutes < 60
+                    else f"{pod.pending_minutes / 60:.1f} hr"
+                )
+                lines.append(
+                    f"  [yellow]⚠ Pending[/yellow]  {pod.namespace}/{pod.pod_name}"
+                    f"  [dim]needs {pod.gpus_needed} GPU(s) — waiting {wait_str}[/dim]"
+                )
 
         if total_leak_day > 0:
             total_leak_yr = total_leak_day * 365

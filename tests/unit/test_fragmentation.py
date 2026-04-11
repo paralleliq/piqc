@@ -15,7 +15,7 @@ def _make_modelspec(gpu_count: int, model_name: str = "test-model") -> ModelSpec
     """Build a minimal ModelSpec with a given GPU count."""
     spec = MagicMock(spec=ModelSpec)
     spec.resources = MagicMock(spec=ResourceInfo)
-    spec.resources.gpu_count = gpu_count
+    spec.resources.gpus = [MagicMock() for _ in range(gpu_count)]
     spec.model = MagicMock()
     spec.model.name = model_name
     return spec
