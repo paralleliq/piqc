@@ -799,7 +799,18 @@ class ScanOrchestrator:
                     created_at = created_at.replace(tzinfo=timezone.utc)
                 pending_minutes = (now - created_at).total_seconds() / 60.0
 
-            pod_name = pod.metadata.name if pod.metadata else "unknown"
+            # Use owner reference (deployment/replicaset name) if available,
+            # otherwise strip the two hash suffixes from the pod name.
+            raw_name = pod.metadata.name if pod.metadata else "unknown"
+            owner_name = None
+            if pod.metadata and pod.metadata.owner_references:
+                for ref in pod.metadata.owner_references:
+                    if ref.kind == "ReplicaSet" and ref.name:
+                        # ReplicaSet name is deployment-name + one hash — strip it
+                        parts = ref.name.rsplit("-", 1)
+                        owner_name = parts[0] if len(parts) > 1 else ref.name
+                        break
+            pod_name = owner_name or raw_name
             namespace = pod.metadata.namespace if pod.metadata else "unknown"
 
             pending.append(
