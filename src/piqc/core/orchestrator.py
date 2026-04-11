@@ -58,6 +58,24 @@ class UnallocatedNodeInfo:
     unallocated_gpus: int
 
 
+@dataclass
+class FragmentedNodeInfo:
+    """A node with leftover GPU slots too small to fit any running model.
+
+    Unlike a fully unallocated node, a fragmented node has pods scheduled
+    but the remaining free GPUs cannot accommodate any model in the cluster
+    (GPUs cannot be combined across nodes). The stranded slots are paid for
+    but permanently unusable without rebalancing.
+    """
+
+    node_name: str
+    gpu_type: str
+    total_gpus: int
+    allocated_gpus: int
+    stranded_gpus: int        # free GPUs that cannot fit any known model
+    min_model_gpus_needed: int  # smallest GPU footprint seen in the cluster
+
+
 class ScanResult:
     """Results from a scan operation."""
 
@@ -70,6 +88,7 @@ class ScanResult:
         self.pods_analyzed: int = 0
         self.deployments_found: int = 0
         self.unallocated_nodes: list[UnallocatedNodeInfo] = []
+        self.fragmented_nodes: list[FragmentedNodeInfo] = []
     
     def add_warning(self, message: str) -> None:
         """Add a warning message."""
@@ -181,6 +200,14 @@ class ScanOrchestrator:
             result.unallocated_nodes = self._analyze_node_capacity()
         except Exception as e:
             result.add_warning(f"Node capacity analysis failed: {e}")
+
+        # Analyze fragmented GPU slots (free slots too small to fit any model)
+        try:
+            result.fragmented_nodes = self._analyze_fragmentation(
+                result.unallocated_nodes, result.modelspecs
+            )
+        except Exception as e:
+            result.add_warning(f"Fragmentation analysis failed: {e}")
 
         result.duration_seconds = time.time() - start_time
         
@@ -616,3 +643,64 @@ class ScanOrchestrator:
                 )
 
         return unallocated
+
+    def _analyze_fragmentation(
+        self,
+        unallocated_nodes: list[UnallocatedNodeInfo],
+        modelspecs: list[ModelSpec],
+    ) -> list[FragmentedNodeInfo]:
+        """Identify nodes with stranded GPU slots that cannot fit any running model.
+
+        A fragmented node has free GPU slots, but the count is smaller than
+        the minimum GPU footprint of any model in the cluster. Because GPUs
+        cannot be shared across nodes, those slots are permanently unusable
+        until the node is rebalanced.
+
+        Args:
+            unallocated_nodes: Nodes with at least one free GPU slot (from
+                _analyze_node_capacity).
+            modelspecs: Discovered model deployments used to determine the
+                minimum GPU requirement in this cluster.
+
+        Returns:
+            List of FragmentedNodeInfo for nodes with stranded slots.
+        """
+        if not unallocated_nodes:
+            return []
+
+        # Derive minimum GPU count needed by any model in this cluster.
+        # gpu_count comes from ResourceInfo which is always populated.
+        gpu_footprints = [
+            spec.resources.gpu_count
+            for spec in modelspecs
+            if spec.resources and spec.resources.gpu_count and spec.resources.gpu_count > 0
+        ]
+
+        if not gpu_footprints:
+            # No models found — cannot determine fragmentation threshold.
+            logger.debug("Fragmentation analysis skipped: no model GPU footprints available")
+            return []
+
+        min_model_gpus = min(gpu_footprints)
+        logger.debug(f"Fragmentation threshold: min model GPU footprint = {min_model_gpus}")
+
+        fragmented: list[FragmentedNodeInfo] = []
+        for node in unallocated_nodes:
+            if node.unallocated_gpus < min_model_gpus:
+                # Free slots exist but cannot accommodate even the smallest model.
+                fragmented.append(
+                    FragmentedNodeInfo(
+                        node_name=node.node_name,
+                        gpu_type=node.gpu_type,
+                        total_gpus=node.total_gpus,
+                        allocated_gpus=node.allocated_gpus,
+                        stranded_gpus=node.unallocated_gpus,
+                        min_model_gpus_needed=min_model_gpus,
+                    )
+                )
+                logger.debug(
+                    f"Fragmented node {node.node_name}: "
+                    f"{node.unallocated_gpus} free GPU(s) < {min_model_gpus} needed"
+                )
+
+        return fragmented

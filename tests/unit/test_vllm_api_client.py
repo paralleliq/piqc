@@ -246,7 +246,7 @@ class TestDiscoverVLLMService:
         mock_client.list_pods.return_value = [mock_pod]
 
         result = discover_vllm_service(mock_client, "default", "vllm-pod")
-        assert result == "http://10.0.0.1:8000"
+        assert result[0] == "http://10.0.0.1:8000"
 
     @patch.object(VLLMAPIClient, "get_health")
     def test_discover_service_try_multiple_ports(self, mock_health: Mock) -> None:
@@ -262,4 +262,4 @@ class TestDiscoverVLLMService:
         mock_client.list_pods.return_value = [mock_pod]
 
         result = discover_vllm_service(mock_client, "default", "vllm-pod")
-        assert result == "http://10.0.0.1:8080"
+        assert result[0] == "http://10.0.0.1:8080"

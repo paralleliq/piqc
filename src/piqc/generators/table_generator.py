@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from piqc.core.orchestrator import UnallocatedNodeInfo
+from piqc.core.orchestrator import FragmentedNodeInfo, UnallocatedNodeInfo
 from piqc.models.modelspec import ModelSpec
 from piqc.utils.logger import get_logger
 
@@ -156,6 +156,7 @@ class TableGenerator:
         gpu_cost_override: Optional[float] = None,
         unallocated_nodes: Optional[list[UnallocatedNodeInfo]] = None,
         node_cost_override: Optional[float] = None,
+        fragmented_nodes: Optional[list[FragmentedNodeInfo]] = None,
     ) -> None:
         """
         Generate and print a summary table of all ModelSpecs.
@@ -165,6 +166,7 @@ class TableGenerator:
             gpu_cost_override: Optional $/GPU/hr override (uses built-in lookup if None).
             unallocated_nodes: Nodes with unscheduled GPU capacity.
             node_cost_override: Optional $/GPU/hr override for unallocated node GPUs.
+            fragmented_nodes: Nodes with stranded GPU slots too small for any model.
         """
         if not modelspecs:
             self.console.print("[dim]No inference deployments found[/dim]")
@@ -230,7 +232,7 @@ class TableGenerator:
 
         self.console.print()
         self.console.print(table)
-        self.print_waste_summary(modelspecs, gpu_cost_override, unallocated_nodes, node_cost_override)
+        self.print_waste_summary(modelspecs, gpu_cost_override, unallocated_nodes, node_cost_override, fragmented_nodes)
         self.console.print()
     
     def generate_detailed_table(self, modelspec: ModelSpec) -> None:
@@ -476,6 +478,7 @@ class TableGenerator:
         gpu_cost_override: Optional[float] = None,
         unallocated_nodes: Optional[list[UnallocatedNodeInfo]] = None,
         node_cost_override: Optional[float] = None,
+        fragmented_nodes: Optional[list[FragmentedNodeInfo]] = None,
     ) -> None:
         """Print a cost summary panel below the table."""
         total_cost_hr = 0.0
@@ -508,7 +511,15 @@ class TableGenerator:
                 misplaced_day += waste
                 misplaced_count += 1
 
-        total_leak_day = idle_day + dark_day + misplaced_day
+        # Category 4: fragmented GPU slots (stranded, cannot fit any model)
+        frag_day = 0.0
+        frag_gpu_count = 0
+        for node in (fragmented_nodes or []):
+            rate = self._estimate_gpu_cost(node.gpu_type, node_cost_override or gpu_cost_override)
+            frag_day += rate * node.stranded_gpus * 24.0
+            frag_gpu_count += node.stranded_gpus
+
+        total_leak_day = idle_day + dark_day + misplaced_day + frag_day
 
         lines: list[str] = []
         if total_cost_hr > 0:
@@ -530,6 +541,11 @@ class TableGenerator:
             lines.append(
                 f"  Tier misplacement        : [bold red]${misplaced_day:,.2f}/day[/bold red]"
                 f"  [dim]({misplaced_count} model(s) on oversized GPU tier)[/dim]"
+            )
+        if frag_day > 0:
+            lines.append(
+                f"  Fragmented nodes         : [bold red]${frag_day:,.2f}/day[/bold red]"
+                f"  [dim]({frag_gpu_count} GPU(s) stranded — too few to fit any model)[/dim]"
             )
 
         if total_leak_day > 0:
