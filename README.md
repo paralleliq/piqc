@@ -73,9 +73,11 @@ No flags needed. PIQC connects to your current kubectl context, scans all namesp
   - Health status
 
 ### 💰 Revenue Leak Detection
-- **Idle GPU waste** — Deployments with utilization below 60% threshold, with dollar waste per day and annualized
-- **Unallocated nodes** — GPU nodes with no pods scheduled (dark capacity still being paid for)
+- **GPU underutilization** — Deployments with utilization below 60% threshold, with dollar waste per day and annualized
+- **Dark capacity** — GPU nodes with no pods scheduled (paying for nodes sitting empty)
 - **Tier misplacement** — Models running on a GPU tier beyond what their parameter count requires (e.g. a 7B model on an H100), with estimated cost delta per day
+- **Fragmentation** — Nodes with free GPU slots too small to fit any running model — slots are permanently stranded until the cluster is rebalanced
+- **Pending GPU pods** — Active workloads blocked from scheduling due to insufficient contiguous GPU slots, shown with how long they have been waiting
 - **Cost Summary panel** — Total spend rate, all three leak categories, and total estimated leak per day / per year
 - **MFU (Model FLOPS Utilization)** — Observed compute vs. theoretical GPU peak per deployment
 - **Cost per 1K tokens** — Translate GPU spend into a business metric comparable to API pricing
