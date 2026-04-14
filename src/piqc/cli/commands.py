@@ -52,6 +52,58 @@ def print_error(message: str) -> None:
     console.print(f"[ERROR] {message}", style="red")
 
 
+def _push_bundle(
+    piqc_file: str,
+    push_url: str,
+    cluster_id: str,
+    console: Console,
+    debug: bool = False,
+) -> None:
+    """Read the generated piqc-facts.json and POST it to the platform ingest endpoint."""
+    import json
+    import requests as _requests
+
+    try:
+        with open(piqc_file, "r", encoding="utf-8") as f:
+            bundle = json.load(f)
+    except Exception as exc:
+        console.print(f"[red][ERROR] Could not read piqc bundle for push: {exc}[/red]")
+        return
+
+    # Translate PIQCBundle format (uses 'objects') to ingest API format (uses 'workloads').
+    workloads = []
+    for obj in bundle.get("objects", []):
+        workloads.append({
+            "workloadId": obj.get("workloadId", ""),
+            "facts": obj.get("facts", {}),
+        })
+
+    payload = {
+        "schemaVersion": bundle.get("schemaVersion", "piqc-scan.v0.1"),
+        "cluster_id": cluster_id,
+        "workloads": workloads,
+    }
+
+    ingest_url = push_url.rstrip("/") + "/v1/ingest"
+    console.print()
+    console.print(f"[INFO] Pushing {len(workloads)} workload(s) to {ingest_url} ...")
+
+    try:
+        resp = _requests.post(ingest_url, json=payload, timeout=30)
+        resp.raise_for_status()
+        results = resp.json()
+        total_recs = sum(len(r.get("recommendations", [])) for r in results)
+        console.print(f"[green]       Push succeeded — {total_recs} recommendation(s) generated[/green]")
+    except _requests.HTTPError as exc:
+        console.print(f"[red][ERROR] Platform returned {exc.response.status_code}: {exc.response.text[:200]}[/red]")
+        if debug:
+            console.print_exception()
+    except _requests.RequestException as exc:
+        console.print(f"[red][ERROR] Could not reach platform at {ingest_url}: {exc}[/red]")
+        if debug:
+            console.print_exception()
+
+
 @click.group()
 @click.version_option(version=__version__, prog_name="piqc")
 def main() -> None:
@@ -183,6 +235,20 @@ def main() -> None:
     default=False,
     help="Contribute anonymized GPU/model performance data to the ParallelIQ benchmark dataset.",
 )
+@click.option(
+    "--push-url",
+    type=str,
+    default=None,
+    metavar="URL",
+    help="Push piqc facts to a ParallelIQ platform API gateway (e.g. http://localhost:8000). Implies --output-piqc.",
+)
+@click.option(
+    "--cluster-id",
+    type=str,
+    default=None,
+    metavar="ID",
+    help="Cluster identifier sent with --push-url. Defaults to the Kubernetes cluster name.",
+)
 def scan(
     kubeconfig: Optional[str],
     context: Optional[str],
@@ -203,6 +269,8 @@ def scan(
     gpu_cost: Optional[float],
     node_cost: Optional[float],
     contribute_benchmarks: bool,
+    push_url: Optional[str],
+    cluster_id: Optional[str],
 ) -> None:
     """
     Scan Kubernetes cluster for vLLM model deployments.
@@ -229,6 +297,12 @@ def scan(
         
         # Skip GPU metrics (faster)
         piqc scan --no-exec
+
+        # Push facts to the ParallelIQ platform (closed-loop demo)
+        piqc scan --push-url http://localhost:8000
+
+        # Push with an explicit cluster ID
+        piqc scan --push-url https://api.paralleliq.ai --cluster-id prod-cluster-1
     """
     # Setup logging
     setup_logging(verbose=verbose, debug=debug)
@@ -368,8 +442,8 @@ def scan(
                 console.print(f"       Directory: {output}")
                 console.print(f"       Files: {len(files)} ModelSpec file(s)")
         
-        # Generate PIQC facts bundle if requested
-        if output_piqc:
+        # Generate PIQC facts bundle if requested (also implied by --push-url)
+        if output_piqc or push_url:
             piqc_gen = PIQCGenerator()
             piqc_file = piqc_gen.generate(
                 modelspecs=result.modelspecs,
@@ -380,6 +454,15 @@ def scan(
             )
             print_info(f"PIQC facts bundle generated:")
             console.print(f"       File: {piqc_file}")
+
+            if push_url:
+                _push_bundle(
+                    piqc_file=piqc_file,
+                    push_url=push_url,
+                    cluster_id=cluster_id or conn_info.get('cluster') or conn_info.get('context') or 'unknown',
+                    console=console,
+                    debug=debug,
+                )
         
         console.print()
     else:
