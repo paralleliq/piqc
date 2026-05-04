@@ -1,5 +1,5 @@
 """
-ModelSpec Introspector
+piqc
 
 A Kubernetes introspection tool for discovering AI/ML model deployments
 and generating standardized ModelSpec documentation.

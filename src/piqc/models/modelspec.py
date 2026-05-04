@@ -29,7 +29,7 @@ class MetadataInfo(BaseModel):
     collector_version: str = Field(
         ...,
         alias="collectorVersion",
-        description="Version of the ModelSpec Introspector",
+        description="Version of the piqc",
     )
 
 

@@ -1,1 +1,1 @@
-"""Test suite for ModelSpec Introspector."""
+"""Test suite for piqc."""

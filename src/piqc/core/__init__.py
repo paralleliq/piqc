@@ -1,1 +1,1 @@
-"""Core modules for ModelSpec Introspector."""
+"""Core modules for piqc."""

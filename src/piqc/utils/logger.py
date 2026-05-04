@@ -1,5 +1,5 @@
 """
-Structured logging configuration for ModelSpec Introspector.
+Structured logging configuration for piqc.
 
 Provides consistent logging across all modules with support for
 different verbosity levels and structured output formatting.

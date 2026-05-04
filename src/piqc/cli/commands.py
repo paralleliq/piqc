@@ -1,5 +1,5 @@
 """
-CLI commands for ModelSpec Introspector.
+CLI commands for piqc.
 
 Provides the command-line interface for scanning Kubernetes clusters
 and generating ModelSpec documentation.
@@ -32,7 +32,7 @@ logger = get_logger(__name__)
 
 def print_header() -> None:
     """Print application header."""
-    console.print(f"ModelSpec Introspector v{__version__}")
+    console.print(f"piqc v{__version__}")
     console.print("=" * 40)
     console.print()
 
@@ -108,7 +108,7 @@ def _push_bundle(
 @click.version_option(version=__version__, prog_name="piqc")
 def main() -> None:
     """
-    ModelSpec Introspector - Kubernetes vLLM Model Discovery Tool.
+    piqc - Kubernetes vLLM Model Discovery Tool.
     
     Discovers vLLM inference deployments in Kubernetes clusters
     and generates standardized ModelSpec documentation.
@@ -558,7 +558,7 @@ def test_connection(
 @main.command()
 def version() -> None:
     """Display version information."""
-    console.print(f"ModelSpec Introspector v{__version__}")
+    console.print(f"piqc v{__version__}")
 
 
 if __name__ == "__main__":

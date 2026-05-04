@@ -1,4 +1,4 @@
-"""Data models for ModelSpec Introspector."""
+"""Data models for piqc."""
 
 from piqc.models.modelspec import (
     ModelSpec,

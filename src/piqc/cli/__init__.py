@@ -1,1 +1,1 @@
-"""CLI module for ModelSpec Introspector."""
+"""CLI module for piqc."""

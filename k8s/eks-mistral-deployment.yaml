@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mistral-7b
+  namespace: default
+  labels:
+    app: mistral-7b
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mistral-7b
+  template:
+    metadata:
+      labels:
+        app: mistral-7b
+    spec:
+      containers:
+        - name: vllm
+          image: 284176533367.dkr.ecr.us-east-2.amazonaws.com/mistral-vllm:latest
+          args:
+            - "--model"
+            - "mistralai/Mistral-7B-Instruct-v0.2"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+            - "--tensor-parallel-size"
+            - "1"
+            - "--dtype"
+            - "float16"
+            - "--max-model-len"
+            - "4096"
+          env:
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              nvidia.com/gpu: "1"
+            limits:
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120
+            periodSeconds: 15
+            failureThreshold: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mistral-7b
+  namespace: default
+spec:
+  selector:
+    app: mistral-7b
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP

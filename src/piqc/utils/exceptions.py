@@ -1,5 +1,5 @@
 """
-Custom exception hierarchy for ModelSpec Introspector.
+Custom exception hierarchy for piqc.
 
 This module defines all custom exceptions used throughout the application,
 providing clear error categorization and meaningful error messages.
@@ -10,7 +10,7 @@ from typing import Optional
 
 class ModelSpecError(Exception):
     """
-    Base exception for all ModelSpec Introspector errors.
+    Base exception for all piqc errors.
     
     All custom exceptions in this application inherit from this class,
     allowing for broad exception catching when needed.

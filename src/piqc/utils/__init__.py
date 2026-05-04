@@ -1,1 +1,1 @@
-"""Utility modules for ModelSpec Introspector."""
+"""Utility modules for piqc."""
