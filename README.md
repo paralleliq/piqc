@@ -3,6 +3,7 @@
   <img src="https://img.shields.io/badge/Python-3.11+-green?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>
   <img src="https://img.shields.io/badge/License-Apache%202.0-orange?style=for-the-badge" alt="License"/>
   <img src="https://img.shields.io/badge/vLLM-Supported-purple?style=for-the-badge" alt="vLLM"/>
+  <img src="https://img.shields.io/github/stars/paralleliq/piqc?style=for-the-badge&logo=github&color=yellow" alt="GitHub Stars"/>
 </p>
 
 <h1 align="center">piqc — GPU Waste Scanner for Kubernetes</h1>
@@ -141,7 +142,7 @@ poetry run piqc scan --format table
 | Format | Description |
 |--------|-------------|
 | **Table** | Cost report with MFU, $/1K tokens, idle waste (default) |
-| **YAML** | Kubernetes-style ModelSpec files |
+| **YAML** | Kubernetes-style inference deployment files |
 | **JSON** | Machine-readable JSON output |
 | **PIQC Facts** | Standardized facts bundle for control plane integration |
 
@@ -301,8 +302,8 @@ Run `piqc scan --format table` — no flags required. See the [output example](#
 Generates individual Kubernetes-style YAML files for each deployment:
 
 ```yaml
-apiVersion: modelspec/v1
-kind: ModelSpec
+apiVersion: piqc/v1
+kind: InferenceDeployment
 metadata:
   name: vllm-llama-7b
   namespace: inference
@@ -466,7 +467,7 @@ piqc/
 │   ├── collectors/           # Data collectors (vLLM config, GPU metrics)
 │   ├── core/                 # Core logic (orchestrator, discovery, k8s client)
 │   ├── generators/           # Output generators (YAML, JSON, Table, PIQC)
-│   ├── models/               # Pydantic data models (ModelSpec, PIQC schema)
+│   ├── models/               # Pydantic data models (inference deployment, PIQC schema)
 │   ├── parsers/              # Configuration parsers (vLLM)
 │   └── utils/                # Utilities (logging, exceptions)
 ├── tests/
@@ -474,7 +475,7 @@ piqc/
 │   └── integration/          # Integration tests
 ├── rbac/                     # Kubernetes RBAC manifests
 ├── docs/                     # Documentation
-└── examples/                 # Example ModelSpec files
+└── examples/                 # Example scan outputs and facts bundles
 ```
 
 ---
