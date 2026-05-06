@@ -1,0 +1,97 @@
+name: Share Scan Findings
+description: Share anonymized piqc scan results to help build aggregate GPU waste data across the community
+title: "[Findings] "
+labels: ["findings"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing your scan results! All findings are used to build aggregate insights about GPU inference waste patterns across real clusters. Please anonymize company and customer names.
+
+  - type: dropdown
+    id: gpu-type
+    attributes:
+      label: GPU Type
+      description: What GPU(s) are running in this cluster?
+      options:
+        - H100 (80GB)
+        - H100 (40GB)
+        - A100 (80GB)
+        - A100 (40GB)
+        - A10G
+        - L40S
+        - L4
+        - V100
+        - RTX 4090 / consumer
+        - Mixed
+        - Other / Unknown
+    validations:
+      required: true
+
+  - type: dropdown
+    id: cluster-size
+    attributes:
+      label: Cluster Size (approximate GPU count)
+      options:
+        - 1-8 GPUs
+        - 9-32 GPUs
+        - 33-128 GPUs
+        - 129-512 GPUs
+        - 512+ GPUs
+    validations:
+      required: true
+
+  - type: dropdown
+    id: inference-server
+    attributes:
+      label: Inference Server
+      description: What inference server(s) are running?
+      options:
+        - vLLM
+        - Triton Inference Server
+        - TGI (Text Generation Inference)
+        - SGLang
+        - Ollama
+        - Custom / in-house
+        - Mixed
+        - Unknown
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: findings
+    attributes:
+      label: What did piqc find?
+      description: Check all that apply
+      options:
+        - label: Tier misplacement (model on wrong GPU tier)
+        - label: GPU over-provisioned (too much GPU for the model)
+        - label: OOM risk (model close to memory ceiling)
+        - label: Cold start latency issues (serverless)
+        - label: Scale-to-zero thrashing (serverless)
+        - label: No issues found — cluster looks healthy
+
+  - type: textarea
+    id: model-sizes
+    attributes:
+      label: Model Sizes Running (approximate)
+      description: e.g. "70B, 13B, 7B" — no model names needed
+      placeholder: e.g. 70B x2, 13B x4, 7B x8
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Anything else worth sharing?
+      description: Surprising findings, edge cases, things piqc missed, or suggestions for new rules
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Consent
+      options:
+        - label: I confirm this data is anonymized and I have permission to share it
+          required: true
