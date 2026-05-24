@@ -30,7 +30,7 @@ Public disclosure before a fix is available puts all PIQC users at risk.
 
 Report vulnerabilities directly to the maintainers:
 
-📨 **[sam@paralleliq.ai](mailto:sam@paralleliq.ai)**
+📨 **[security@paralleliq.ai](mailto:security@paralleliq.ai)**
 
 **Subject line:** `[PIQC SECURITY] <brief description>`
 
@@ -167,7 +167,7 @@ We ask that reporters:
 
 ## Contact
 
-📨 **Security Contact:** [sam@paralleliq.ai](mailto:sam@paralleliq.ai)
+📨 **Security Contact:** [security@paralleliq.ai](mailto:security@paralleliq.ai)
 
 🌐 **Website:** [paralleliq.ai](https://paralleliq.ai)
 
