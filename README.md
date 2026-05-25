@@ -9,7 +9,7 @@
 <h1 align="center">piqc — GPU Waste Scanner for Kubernetes</h1>
 
 <p align="center">
-  <strong>Most AI clusters waste 40–60% of GPU spend. piqc finds it in one command.</strong>
+  <strong>Most AI clusters waste 20–40% of GPU spend. piqc finds it in one command.</strong>
   <br/><br/>
   Read-only · No agents · No sidecars · Nothing installed permanently · Runs as a Job, prints results, exits.
 </p>
@@ -21,6 +21,21 @@
   <a href="#-output-formats">Output Formats</a> •
   <a href="#-installation">Installation</a>
 </p>
+
+---
+
+## What is piqc?
+
+piqc is an open-source GPU waste scanner for Kubernetes clusters. It detects idle GPU allocations, tier misplacement, and dark capacity — and surfaces a dollar estimate of the waste — in under a minute. No agents, no sidecars, no write permissions, no permanent installation required.
+
+It is the fastest way to answer: **how much GPU spend is my Kubernetes cluster wasting right now?**
+
+piqc surfaces three types of waste that standard Kubernetes monitoring (`kubectl top`, `kube-state-metrics`, Prometheus node exporters) cannot detect on their own:
+- **Idle allocation** — pods holding GPU resources with near-zero compute utilization
+- **Tier misplacement** — models running on GPU tiers with far more memory or compute than they need
+- **Dark capacity** — GPU nodes with no pods scheduled at all
+
+It works with any Kubernetes cluster running GPU inference workloads — GKE, EKS, AKS, on-prem, or bare metal. Supports vLLM, Triton, TGI, and any deployment using `nvidia.com/gpu` resource requests.
 
 ---
 
@@ -482,7 +497,7 @@ piqc/
 
 ## What to do with the results
 
-piqc tells you what's wrong. The [Paralleliq control plane](https://paralleliq.ai) closes the loop — it ingests the piqc facts bundle and automatically remediates misplacement, underutilization, and OOM risk through human-approved Temporal workflows.
+piqc tells you what's wrong. The [Paralleliq optimization layer](https://paralleliq.ai) closes the loop — it ingests the piqc facts bundle, maps waste to the model level, and routes remediations through human-approved workflows with a full audit trail.
 
 → [paralleliq.ai](https://paralleliq.ai) · [info@paralleliq.ai](mailto:info@paralleliq.ai)
 
