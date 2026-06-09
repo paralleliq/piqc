@@ -6,12 +6,12 @@
   <img src="https://img.shields.io/github/stars/paralleliq/piqc?style=for-the-badge&logo=github&color=yellow" alt="GitHub Stars"/>
 </p>
 
-<h1 align="center">piqc — GPU Waste Scanner for Kubernetes</h1>
+<h1 align="center">piqc — Inference Fact Collector for AI Infrastructure Optimization</h1>
 
 <p align="center">
   <strong>Most AI clusters waste 20–40% of GPU spend. piqc finds it in one command.</strong>
   <br/><br/>
-  Read-only · No agents · No sidecars · Nothing installed permanently · Runs as a Job, prints results, exits.
+  vLLM-native · Hardware-pluggable · Read-only · No agents · No sidecars · Nothing installed permanently
 </p>
 
 <p align="center">
@@ -26,16 +26,27 @@
 
 ## What is piqc?
 
-piqc is an open-source GPU waste scanner for Kubernetes clusters. It detects idle GPU allocations, tier misplacement, and dark capacity — and surfaces a dollar estimate of the waste — in under a minute. No agents, no sidecars, no write permissions, no permanent installation required.
+piqc is an open-source inference fact collector for Kubernetes clusters. It collects model-aware facts — what is running, on what hardware, at what cost, with what waste — and surfaces them as a standardized facts bundle that feeds an optimization layer. It also prints a human-readable cost report so you can act on the results immediately without any external platform.
 
 It is the fastest way to answer: **how much GPU spend is my Kubernetes cluster wasting right now?**
+
+```
+piqc
+  └── inference collector (vLLM-native)     ← collects model, GPU, KV cache, throughput facts
+  └── hardware collector (plugin)           ← vendors contribute their own telemetry
+        ├── nvidia/   (DCGM, MIG state)
+        ├── amd/      (ROCm metrics)
+        └── your-hardware/
+```
+
+Facts flow to the [Paralleliq optimization layer](https://paralleliq.ai), which maps waste to the model level and routes remediations through human-approved workflows. piqc runs standalone too — no platform required to get value from the cost report.
 
 piqc surfaces three types of waste that standard Kubernetes monitoring (`kubectl top`, `kube-state-metrics`, Prometheus node exporters) cannot detect on their own:
 - **Idle allocation** — pods holding GPU resources with near-zero compute utilization
 - **Tier misplacement** — models running on GPU tiers with far more memory or compute than they need
 - **Dark capacity** — GPU nodes with no pods scheduled at all
 
-It works with any Kubernetes cluster running GPU inference workloads — GKE, EKS, AKS, on-prem, or bare metal. Supports vLLM, Triton, TGI, and any deployment using `nvidia.com/gpu` resource requests.
+It works with any Kubernetes cluster running GPU inference workloads — GKE, EKS, AKS, on-prem, or bare metal. vLLM is the primary supported inference framework. Hardware fact collection is pluggable — see [Contributing a Hardware Plugin](#contributing-a-hardware-plugin).
 
 ---
 
@@ -168,19 +179,21 @@ poetry run piqc scan --format table
 - **Timeout Controls**: Configurable operation timeouts
 - **Docker Image**: Pre-built multi-platform image (`linux/amd64` + `linux/arm64`) on GitHub Container Registry
 
-### 🔮 Coming Soon
+### 🔌 Hardware Plugins
+
+piqc's hardware fact collection is designed to be pluggable. The inference collector (vLLM) is maintained in this repo. Hardware vendors contribute their own collectors using the same fact schema — so AMD, Intel, and custom hardware telemetry can be added without touching the core.
 
 <table>
 <tr>
 <td width="50%" valign="top">
 
-**🔴 AMD GPU Support**
+**🔴 AMD GPU Plugin**
 
-Support for AMD Instinct and Radeon GPUs via `rocm-smi`:
+Hardware plugin for AMD Instinct GPUs via `rocm-smi`:
 - AMD Instinct MI250X/MI300X detection
 - GPU utilization, memory & temperature metrics
 - ROCm ecosystem integration
-- Seamless multi-vendor GPU environments
+- Contributed by the community / AMD
 
 </td>
 <td width="50%" valign="top">
@@ -196,6 +209,8 @@ Discovery and documentation for distributed LLM inference:
 </td>
 </tr>
 </table>
+
+Want to contribute a hardware plugin? See [Contributing a Hardware Plugin](#contributing-a-hardware-plugin).
 
 ---
 
@@ -356,7 +371,7 @@ runtimeState:
 
 ### PIQC Facts Bundle
 
-With `--output-piqc`, generates a standardized facts bundle for integration with the [Paralleliq control plane](https://paralleliq.ai):
+With `--output-piqc`, generates a standardized facts bundle for integration with the [Paralleliq optimization layer](https://paralleliq.ai):
 
 ```json
 {
@@ -500,6 +515,19 @@ piqc/
 piqc tells you what's wrong. The [Paralleliq optimization layer](https://paralleliq.ai) closes the loop — it ingests the piqc facts bundle, maps waste to the model level, and routes remediations through human-approved workflows with a full audit trail.
 
 → [paralleliq.ai](https://paralleliq.ai) · [info@paralleliq.ai](mailto:info@paralleliq.ai)
+
+---
+
+## Contributing a Hardware Plugin
+
+piqc's hardware fact collection is designed so hardware vendors and community contributors can add support for their own GPU or accelerator without modifying the core inference collector.
+
+A hardware plugin is a collector that:
+1. Reads telemetry from the target hardware (via `nvidia-smi`, `rocm-smi`, vendor BMC API, or equivalent)
+2. Emits facts using the piqc fact schema (`hardware.gpuType`, `hardware.gpuCount`, `observed.gpuUtilization`, etc.)
+3. Lives under `src/piqc/collectors/hardware/<vendor>/`
+
+The vLLM inference collector is the reference implementation. If you represent a hardware vendor or want to contribute support for AMD, Intel Gaudi, or another accelerator, open an issue or email [info@paralleliq.ai](mailto:info@paralleliq.ai).
 
 ---
 
