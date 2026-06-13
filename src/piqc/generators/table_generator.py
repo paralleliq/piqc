@@ -595,6 +595,11 @@ class TableGenerator:
         if lines:
             self.console.print(Panel("\n".join(lines), title="Cost Summary", expand=False))
 
+        self.console.print(
+            "  [dim]→ Continuous monitoring, alerts & remediation:[/dim]"
+            " [bold]paralleliq.ai[/bold]\n"
+        )
+
     def _format_gpu_info(self, spec: ModelSpec) -> str:
         """Format GPU information for display."""
         gpus = spec.resources.gpus
