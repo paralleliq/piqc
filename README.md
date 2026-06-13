@@ -77,6 +77,11 @@ Run `piqc scan` against your cluster and get an instant cost report:
 │                                                                                        │
 │   Avg MFU (active deployments) : 15.7%  (healthy range: 30–60%)                        │
 ╰────────────────────────────────────────────────────────────────────────────────────────╯
+
+  → Continuous monitoring, alerts & remediation: paralleliq.ai
+```
+
+**piqc is free and open source.** The scan gives you the full picture — what is running, on what hardware, at what cost, and where the waste is. For continuous monitoring, alerting across your fleet, and automated remediation workflows, see [paralleliq.ai](https://paralleliq.ai).
 ```
 
 piqc surfaces three types of waste:
