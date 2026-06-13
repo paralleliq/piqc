@@ -596,8 +596,8 @@ class TableGenerator:
             self.console.print(Panel("\n".join(lines), title="Cost Summary", expand=False))
 
         self.console.print(
-            "  [dim]→ Continuous monitoring, alerts & remediation:[/dim]"
-            " [bold]paralleliq.ai[/bold]\n"
+            "  [dim]→ This scan is free. For continuous monitoring, alerting &"
+            " automated remediation:[/dim] [bold]paralleliq.ai[/bold]\n"
         )
 
     def _format_gpu_info(self, spec: ModelSpec) -> str:
