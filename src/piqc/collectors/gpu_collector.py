@@ -18,20 +18,31 @@ from piqc.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _parse_int(value: str, default: Optional[int] = None) -> Optional[int]:
+    """Parse an integer from nvidia-smi output, returning default for [N/A] or bad values."""
+    v = value.strip()
+    if v in ("[N/A]", "N/A", "", "[Not Supported]"):
+        return default
+    try:
+        return int(float(v))
+    except (ValueError, TypeError):
+        return default
+
+
 @dataclass
 class GPUMetrics:
     """Real-time metrics for a single GPU."""
-    
+
     gpu_index: int
     gpu_model: str
     memory_total_mb: int
     memory_used_mb: int
     memory_free_mb: int
-    utilization_percent: int
-    memory_utilization_percent: int
-    temperature_celsius: int
-    power_draw_watts: int
-    power_limit_watts: int
+    utilization_percent: Optional[int]
+    memory_utilization_percent: Optional[int]
+    temperature_celsius: Optional[int]
+    power_draw_watts: Optional[int]
+    power_limit_watts: Optional[int]
     collection_timestamp: datetime
     
     def to_memory_str(self, mb_value: int) -> str:
@@ -211,11 +222,11 @@ class GPUCollector:
                     memory_total_mb=int(float(parts[2])),
                     memory_used_mb=int(float(parts[3])),
                     memory_free_mb=int(float(parts[4])),
-                    utilization_percent=int(float(parts[5])),
-                    memory_utilization_percent=int(float(parts[6])),
-                    temperature_celsius=int(float(parts[7])),
-                    power_draw_watts=int(float(parts[8])),
-                    power_limit_watts=int(float(parts[9])),
+                    utilization_percent=_parse_int(parts[5]),
+                    memory_utilization_percent=_parse_int(parts[6]),
+                    temperature_celsius=_parse_int(parts[7]),
+                    power_draw_watts=_parse_int(parts[8]),
+                    power_limit_watts=_parse_int(parts[9]),
                     collection_timestamp=timestamp,
                 ))
             except (ValueError, IndexError) as e:
@@ -247,11 +258,11 @@ class GPUCollector:
                     memory_total_mb=memory_total,
                     memory_used_mb=0,
                     memory_free_mb=memory_total,
-                    utilization_percent=0,
-                    memory_utilization_percent=0,
-                    temperature_celsius=0,
-                    power_draw_watts=0,
-                    power_limit_watts=0,
+                    utilization_percent=None,
+                    memory_utilization_percent=None,
+                    temperature_celsius=None,
+                    power_draw_watts=None,
+                    power_limit_watts=None,
                     collection_timestamp=timestamp,
                 ))
             except (ValueError, IndexError) as e:
