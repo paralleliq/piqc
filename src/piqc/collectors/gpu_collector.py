@@ -101,6 +101,8 @@ class GPUCollector:
         Returns:
             List of GPUMetrics if successful, None if nvidia-smi unavailable.
         """
+        _NOT_FOUND_TERMS = ["not found", "command not found", "no such file", "exec failed", "executable file"]
+
         for smi_path in self.NVIDIA_SMI_PATHS:
             command = [smi_path] + self.NVIDIA_SMI_COMMAND[1:]
             try:
@@ -111,6 +113,11 @@ class GPUCollector:
                     container=container,
                     timeout=self.exec_timeout,
                 )
+
+                # stderr "not found" means the binary doesn't exist at this path — try next
+                if any(term in stderr.lower() for term in _NOT_FOUND_TERMS):
+                    logger.debug(f"{smi_path} not found in {namespace}/{pod_name}, trying next path")
+                    continue
 
                 if not stdout.strip():
                     logger.debug(f"Empty nvidia-smi output from {namespace}/{pod_name}")
@@ -130,7 +137,7 @@ class GPUCollector:
                         reason="Permission denied for nvidia-smi",
                     )
 
-                if any(term in error_str for term in ["not found", "command not found", "no such file"]):
+                if any(term in error_str for term in _NOT_FOUND_TERMS):
                     logger.debug(f"{smi_path} not found in {namespace}/{pod_name}, trying next path")
                     continue
 
