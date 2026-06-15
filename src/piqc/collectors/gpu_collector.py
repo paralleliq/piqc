@@ -62,10 +62,11 @@ class GPUCollector:
     Gracefully degrades if nvidia-smi is unavailable.
     """
     
-    # nvidia-smi paths to try — GKE mounts it at /usr/local/nvidia/bin/
+    # Host-mounted path first: container-bundled nvidia-smi (e.g. in vLLM image) can
+    # return [N/A] for utilization when its CUDA version doesn't match the host driver.
     NVIDIA_SMI_PATHS = [
-        "nvidia-smi",
         "/usr/local/nvidia/bin/nvidia-smi",
+        "nvidia-smi",
         "/usr/bin/nvidia-smi",
     ]
 
