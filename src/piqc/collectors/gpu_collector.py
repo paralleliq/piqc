@@ -51,6 +51,13 @@ class GPUCollector:
     Gracefully degrades if nvidia-smi is unavailable.
     """
     
+    # nvidia-smi paths to try — GKE mounts it at /usr/local/nvidia/bin/
+    NVIDIA_SMI_PATHS = [
+        "nvidia-smi",
+        "/usr/local/nvidia/bin/nvidia-smi",
+        "/usr/bin/nvidia-smi",
+    ]
+
     # nvidia-smi command for CSV output
     NVIDIA_SMI_COMMAND = [
         "nvidia-smi",
@@ -58,7 +65,7 @@ class GPUCollector:
         "utilization.gpu,utilization.memory,temperature.gpu,power.draw,power.limit",
         "--format=csv,noheader,nounits",
     ]
-    
+
     # Alternative command if the detailed query fails
     NVIDIA_SMI_SIMPLE_COMMAND = [
         "nvidia-smi",
@@ -94,59 +101,64 @@ class GPUCollector:
         Returns:
             List of GPUMetrics if successful, None if nvidia-smi unavailable.
         """
-        try:
-            stdout, stderr = self.k8s_client.exec_in_pod(
-                pod_name=pod_name,
-                namespace=namespace,
-                command=self.NVIDIA_SMI_COMMAND,
-                container=container,
-                timeout=self.exec_timeout,
-            )
-            
-            if not stdout.strip():
-                logger.debug(f"Empty nvidia-smi output from {namespace}/{pod_name}")
-                return self._try_simple_query(pod_name, namespace, container)
-            
-            return self._parse_nvidia_smi_output(stdout)
-            
-        except GPUMetricsUnavailableError:
-            raise
-        except Exception as e:
-            error_str = str(e).lower()
-            
-            # Check for common nvidia-smi unavailable scenarios
-            if any(term in error_str for term in ["not found", "command not found", "no such file"]):
-                logger.debug(f"nvidia-smi not found in {namespace}/{pod_name}")
+        for smi_path in self.NVIDIA_SMI_PATHS:
+            command = [smi_path] + self.NVIDIA_SMI_COMMAND[1:]
+            try:
+                stdout, stderr = self.k8s_client.exec_in_pod(
+                    pod_name=pod_name,
+                    namespace=namespace,
+                    command=command,
+                    container=container,
+                    timeout=self.exec_timeout,
+                )
+
+                if not stdout.strip():
+                    logger.debug(f"Empty nvidia-smi output from {namespace}/{pod_name}")
+                    return self._try_simple_query(pod_name, namespace, container, smi_path)
+
+                return self._parse_nvidia_smi_output(stdout)
+
+            except GPUMetricsUnavailableError:
+                raise
+            except Exception as e:
+                error_str = str(e).lower()
+
+                if "permission denied" in error_str:
+                    logger.debug(f"nvidia-smi permission denied in {namespace}/{pod_name}")
+                    raise GPUMetricsUnavailableError(
+                        pod_name=pod_name,
+                        reason="Permission denied for nvidia-smi",
+                    )
+
+                if any(term in error_str for term in ["not found", "command not found", "no such file"]):
+                    logger.debug(f"{smi_path} not found in {namespace}/{pod_name}, trying next path")
+                    continue
+
+                logger.warning(f"GPU metrics collection failed for {namespace}/{pod_name}: {e}")
                 raise GPUMetricsUnavailableError(
                     pod_name=pod_name,
-                    reason="nvidia-smi not found in container",
+                    reason=str(e),
                 )
-            
-            if "permission denied" in error_str:
-                logger.debug(f"nvidia-smi permission denied in {namespace}/{pod_name}")
-                raise GPUMetricsUnavailableError(
-                    pod_name=pod_name,
-                    reason="Permission denied for nvidia-smi",
-                )
-            
-            logger.warning(f"GPU metrics collection failed for {namespace}/{pod_name}: {e}")
-            raise GPUMetricsUnavailableError(
-                pod_name=pod_name,
-                reason=str(e),
-            )
+
+        raise GPUMetricsUnavailableError(
+            pod_name=pod_name,
+            reason="nvidia-smi not found at any known path",
+        )
     
     def _try_simple_query(
         self,
         pod_name: str,
         namespace: str,
         container: Optional[str],
+        smi_path: str = "nvidia-smi",
     ) -> Optional[list[GPUMetrics]]:
         """Try a simpler nvidia-smi query as fallback."""
         try:
+            command = [smi_path] + self.NVIDIA_SMI_SIMPLE_COMMAND[1:]
             stdout, stderr = self.k8s_client.exec_in_pod(
                 pod_name=pod_name,
                 namespace=namespace,
-                command=self.NVIDIA_SMI_SIMPLE_COMMAND,
+                command=command,
                 container=container,
                 timeout=self.exec_timeout,
             )
