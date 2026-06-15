@@ -10,6 +10,7 @@ from datetime import datetime
 from piqc.collectors.gpu_collector import (
     GPUCollector,
     GPUMetrics,
+    _parse_int,
     get_gpu_info_from_pod_spec,
 )
 
@@ -53,6 +54,37 @@ class TestGPUMetrics:
         )
         
         assert metrics.to_memory_str(512) == "512MB"
+
+
+class TestParseInt:
+    """Tests for _parse_int helper that handles nvidia-smi N/A fields."""
+
+    def test_normal_integer(self) -> None:
+        assert _parse_int("74") == 74
+
+    def test_float_string(self) -> None:
+        assert _parse_int("74.5") == 74
+
+    def test_na_bracket(self) -> None:
+        assert _parse_int("[N/A]") is None
+
+    def test_na_plain(self) -> None:
+        assert _parse_int("N/A") is None
+
+    def test_empty_string(self) -> None:
+        assert _parse_int("") is None
+
+    def test_not_supported(self) -> None:
+        assert _parse_int("[Not Supported]") is None
+
+    def test_whitespace(self) -> None:
+        assert _parse_int("  42  ") == 42
+
+    def test_default_value(self) -> None:
+        assert _parse_int("[N/A]", default=0) == 0
+
+    def test_garbage(self) -> None:
+        assert _parse_int("bogus") is None
 
 
 class TestNvidiaSmiParsing:
