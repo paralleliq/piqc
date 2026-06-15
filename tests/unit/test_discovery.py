@@ -217,6 +217,44 @@ class TestDeploymentDiscovery:
         assert len(grouped[0].pod_names) == 2
         assert grouped[0].confidence == 0.9  # Highest confidence
     
+    def test_analyze_ray_serve_worker_pod(self) -> None:
+        """Test analyzing a Ray Serve worker pod returns a deployment."""
+        discovery = DeploymentDiscovery()
+
+        pod = create_mock_pod(
+            name="piqc-ray-cluster-workers-worker-abc",
+            namespace="default",
+            image="rayproject/ray:2.55.1-py312",
+            labels={
+                "ray.io/is-ray-node": "yes",
+                "ray.io/node-type": "worker",
+                "ray.io/cluster": "piqc-ray-cluster",
+                "app.kubernetes.io/created-by": "kuberay-operator",
+            },
+        )
+
+        deployment = discovery.analyze_pod(pod)
+
+        assert deployment is not None
+        assert deployment.framework == "ray_serve"
+
+    def test_ray_head_pod_not_detected_as_inference(self) -> None:
+        """Test that Ray head pods are not detected as inference workloads."""
+        detector = FrameworkDetector()
+
+        pod = create_mock_pod(
+            name="piqc-ray-cluster-head-abc",
+            image="rayproject/ray:2.55.1-py312",
+            labels={
+                "ray.io/is-ray-node": "yes",
+                "ray.io/node-type": "head",
+            },
+        )
+
+        framework, confidence = detector.detect(pod)
+
+        assert framework != "ray_serve"
+
     def test_filter_running_pods(self) -> None:
         """Test filtering to only running pods."""
         discovery = DeploymentDiscovery()

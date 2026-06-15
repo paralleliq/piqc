@@ -86,6 +86,21 @@ VLLM_LABEL_INDICATORS = {
 }
 
 # =============================================================================
+# Ray Serve Detection Patterns
+# =============================================================================
+
+# Ray worker pods carry these labels when deployed via KubeRay
+RAY_WORKER_LABEL_INDICATORS = {
+    "ray.io/is-ray-node": {"yes"},
+    "ray.io/node-type": {"worker"},
+}
+
+RAY_IMAGE_PATTERNS = [
+    re.compile(r"^rayproject/ray:.*$", re.IGNORECASE),
+    re.compile(r".*rayproject.*", re.IGNORECASE),
+]
+
+# =============================================================================
 # GPU Resource Keys (for ML workload detection)
 # =============================================================================
 
@@ -168,6 +183,11 @@ class FrameworkDetector:
         if vllm_confidence >= 0.2:  # Threshold for positive detection
             return "vllm", vllm_confidence
 
+        # Check Ray Serve (KubeRay worker pods)
+        ray_confidence = self._calculate_ray_confidence(pod)
+        if ray_confidence >= 0.5:
+            return "ray_serve", ray_confidence
+
         # Check if it's at least an ML workload
         if self._is_ml_workload(pod):
             return "unknown", 0.1
@@ -222,6 +242,30 @@ class FrameworkDetector:
     
 
     
+    def _calculate_ray_confidence(self, pod: V1Pod) -> float:
+        """Calculate confidence score for Ray Serve detection."""
+        labels = (pod.metadata.labels or {}) if pod.metadata else {}
+        is_ray_node = labels.get("ray.io/is-ray-node", "").lower() == "yes"
+        node_type = labels.get("ray.io/node-type", "").lower()
+
+        # Head pods are control plane — not inference workloads
+        if is_ray_node and node_type == "head":
+            return 0.0
+
+        confidence = 0.0
+
+        # Strong signal: KubeRay worker labels
+        if is_ray_node and node_type == "worker":
+            confidence += 0.8
+
+        # Supporting signal: rayproject image
+        for container in self._get_all_containers(pod):
+            if self._matches_patterns(container.image or "", RAY_IMAGE_PATTERNS):
+                confidence += 0.2
+                break
+
+        return min(confidence, 1.0)
+
     def _is_gpu_infra_pod(self, pod: V1Pod) -> bool:
         """Return True if this pod is a GPU infrastructure daemon, not an inference workload."""
         pod_name = (pod.metadata.name or "") if pod.metadata else ""
