@@ -587,10 +587,10 @@ class ScanOrchestrator:
                 index=m.gpu_index,
                 type=m.gpu_model,
                 memory_total=m.to_memory_str(m.memory_total_mb),
-                memory_used=m.to_memory_str(m.memory_used_mb) if m.memory_used_mb else None,
-                utilization=m.utilization_percent if m.utilization_percent else None,
-                temperature=m.temperature_celsius if m.temperature_celsius else None,
-                power_draw=m.power_draw_watts if m.power_draw_watts else None,
+                memory_used=m.to_memory_str(m.memory_used_mb) if m.memory_used_mb is not None else None,
+                utilization=m.utilization_percent,
+                temperature=m.temperature_celsius,
+                power_draw=m.power_draw_watts,
                 pod_name=pod_name,
             )
             for m in metrics

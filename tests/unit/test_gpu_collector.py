@@ -6,6 +6,7 @@ Tests nvidia-smi parsing and fallback behavior.
 
 import pytest
 from datetime import datetime
+from unittest.mock import MagicMock
 
 from piqc.collectors.gpu_collector import (
     GPUCollector,
@@ -123,6 +124,39 @@ class TestNvidiaSmiParsing:
         # Second GPU
         parts2 = [p.strip() for p in lines[1].split(",")]
         assert int(parts2[0]) == 1
+
+
+class TestParseNvidiaSmiOutput:
+    """Tests for GPUCollector._parse_nvidia_smi_output."""
+
+    def _collector(self) -> GPUCollector:
+        return GPUCollector(k8s_client=MagicMock())
+
+    def test_idle_gpu_zero_util_preserved(self) -> None:
+        """util=0 must survive the parse — falsy check was stripping it."""
+        output = "0, NVIDIA L4, 23034, 20134, 2430, 0, 0, 77, 42.93, 72.00"
+        result = self._collector()._parse_nvidia_smi_output(output)
+        assert len(result) == 1
+        assert result[0].utilization_percent == 0  # not None
+        assert result[0].memory_utilization_percent == 0
+
+    def test_active_gpu_util_preserved(self) -> None:
+        output = "0, NVIDIA A100-SXM4-80GB, 81920, 45120, 36800, 87, 55, 72, 320, 400"
+        result = self._collector()._parse_nvidia_smi_output(output)
+        assert len(result) == 1
+        assert result[0].utilization_percent == 87
+
+    def test_na_util_returns_none(self) -> None:
+        output = "0, NVIDIA L4, 23034, 20134, 2430, [N/A], [N/A], [N/A], [N/A], [N/A]"
+        result = self._collector()._parse_nvidia_smi_output(output)
+        assert len(result) == 1
+        assert result[0].utilization_percent is None
+
+    def test_power_draw_float_parsed(self) -> None:
+        output = "0, NVIDIA L4, 23034, 20134, 2430, 0, 0, 77, 42.93, 72.00"
+        result = self._collector()._parse_nvidia_smi_output(output)
+        assert result[0].power_draw_watts == 42
+        assert result[0].power_limit_watts == 72
 
 
 class TestFallbackGPUInfo:
