@@ -537,7 +537,7 @@ class TableGenerator:
         if idle_day > 0:
             lines.append(
                 f"  Leased & idle (util <{_IDLE_THRESHOLD}%) : [bold red]${idle_day:,.2f}/day[/bold red]"
-                f"  [dim](pods running, GPUs underused)[/dim]"
+                f"  [dim](low utilization — may reflect traffic patterns; worth investigating)[/dim]"
             )
         if dark_day > 0:
             lines.append(
@@ -573,8 +573,23 @@ class TableGenerator:
             lines.append("")
             lines.append(
                 f"  Total estimated leak     : [bold red]${total_leak_day:,.2f}/day[/bold red]"
-                f"  ([dim]${total_leak_yr:,.0f}/yr[/dim])"
+                f"  [dim](${total_leak_yr:,.0f}/yr at current rate)[/dim]"
             )
+            lines.append("")
+            confirmed = []
+            investigate = []
+            if dark_day > 0:
+                confirmed.append("unallocated nodes")
+            if misplaced_day > 0:
+                confirmed.append("tier misplacement")
+            if frag_day > 0:
+                confirmed.append("fragmented capacity")
+            if idle_day > 0:
+                investigate.append("low GPU utilization")
+            if confirmed:
+                lines.append(f"  [bold]Confirmed waste[/bold]   : {', '.join(confirmed)}")
+            if investigate:
+                lines.append(f"  [yellow]Signals to investigate[/yellow]: {', '.join(investigate)} (verify against traffic data)")
 
         # Avg MFU across deployments that have runtime metrics
         mfus = [m for spec in modelspecs if (m := self._compute_mfu(spec)) is not None]
@@ -596,8 +611,14 @@ class TableGenerator:
             self.console.print(Panel("\n".join(lines), title="Cost Summary", expand=False))
 
         self.console.print(
-            "  [dim]→ This scan is free. For continuous monitoring, alerting &"
-            " automated remediation:[/dim] [bold]paralleliq.ai[/bold]\n"
+            "  [dim]─────────────────────────────────────────────────────────────[/dim]"
+        )
+        self.console.print(
+            "  [bold cyan]→ Want to know what this waste is actually costing you?[/bold cyan]\n"
+            "  [dim]Paralleliq turns these signals into confirmed findings with dollar impact,\n"
+            "  continuous monitoring, and automated remediation — so you act on facts, not guesses.\n"
+            "  Free to get started:[/dim] [bold]paralleliq.ai[/bold]"
+            "  [dim]  ·  Questions?[/dim] [bold]sam@paralleliq.ai[/bold]\n"
         )
 
     def _format_gpu_info(self, spec: ModelSpec) -> str:
