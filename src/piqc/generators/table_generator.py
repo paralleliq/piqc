@@ -617,6 +617,7 @@ class TableGenerator:
             "  [bold cyan]→ Want to know what this waste is actually costing you?[/bold cyan]\n"
             "  [dim]Paralleliq turns these signals into confirmed findings with dollar impact,\n"
             "  continuous monitoring, and automated remediation — so you act on facts, not guesses.\n"
+            "  Running proprietary models or on-prem hardware? We'll configure it for your exact costs.\n"
             "  Free to get started:[/dim] [bold]paralleliq.ai[/bold]"
             "  [dim]  ·  Questions?[/dim] [bold]sam@paralleliq.ai[/bold]\n"
         )
