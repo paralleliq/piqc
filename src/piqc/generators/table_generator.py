@@ -191,7 +191,6 @@ class TableGenerator:
         table.add_column("$/hr",        justify="right")
         table.add_column("Idle $/day",  justify="right")
         table.add_column("Tier Fit",    justify="center")
-        table.add_column("Namespace",   style="dim")
 
         for spec in modelspecs:
             model_name = spec.model.name or spec.metadata.name
@@ -229,7 +228,6 @@ class TableGenerator:
                 cost_str,
                 idle_str,
                 tier_str,
-                spec.metadata.namespace,
             )
 
         self.console.print()
