@@ -17,6 +17,7 @@
 <p align="center">
   <a href="#-quick-start">Quick Start</a> •
   <a href="#-features">Features</a> •
+  <a href="#-orchestrator-integrations">Integrations</a> •
   <a href="#-commands">Commands</a> •
   <a href="#-output-formats">Output Formats</a> •
   <a href="#-installation">Installation</a>
@@ -216,6 +217,20 @@ Discovery and documentation for distributed LLM inference:
 </table>
 
 Want to contribute a hardware plugin? See [Contributing a Hardware Plugin](#contributing-a-hardware-plugin).
+
+---
+
+## 🔌 Orchestrator Integrations
+
+### dstack
+
+[`paralleliq-dstack-plugin`](https://github.com/paralleliq/paralleliq-dstack-plugin) ([PyPI](https://pypi.org/project/paralleliq-dstack-plugin/)) hooks into [dstack](https://dstack.ai)'s plugin system. When a GPU fleet or task is applied against a dstack project on a Kubernetes backend, it surfaces the piqc scan commands so you know to check for waste on the cluster dstack just provisioned onto.
+
+```bash
+pip install paralleliq-dstack-plugin
+```
+
+dstack discovers it automatically via Python entry points — no further configuration required. See the plugin repo for what it does today and its current limitations.
 
 ---
 
