@@ -531,7 +531,7 @@ class ScanOrchestrator:
             kubernetes=KubernetesMetadata(
                 deployment_type=deployment.deployment_type,
                 cluster_name=self.k8s_client.cluster_name,
-                creation_timestamp=None,
+                creation_timestamp=deployment.created_at.isoformat() if deployment.created_at else None,
                 image=image,
                 image_tag=image_tag,
             ),

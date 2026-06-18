@@ -413,6 +413,7 @@ class DeploymentDiscovery:
             replicas=1,  # Will be updated during grouping
             pod_names=[pod_name],
             detected_at=datetime.utcnow(),
+            created_at=pod.metadata.creation_timestamp,
             container_image=container_image,
             container_args=container_args,
             env_vars=env_vars,
@@ -452,6 +453,11 @@ class DeploymentDiscovery:
                 if deployment.confidence > existing.confidence:
                     existing.confidence = deployment.confidence
                     existing.framework = deployment.framework
+                # Track the oldest pod — that's how long this deployment has really been up
+                if deployment.created_at and (
+                    existing.created_at is None or deployment.created_at < existing.created_at
+                ):
+                    existing.created_at = deployment.created_at
             else:
                 grouped[key] = deployment
         

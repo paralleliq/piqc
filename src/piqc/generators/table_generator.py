@@ -5,6 +5,7 @@ Generates formatted console tables from ModelSpec data.
 """
 
 import re
+from datetime import datetime, timezone
 from typing import Optional
 
 from rich.console import Console
@@ -43,6 +44,7 @@ _GPU_COST_PER_HOUR: dict[str, float] = {
 }
 _DEFAULT_GPU_COST_PER_HOUR = 2.00
 _IDLE_THRESHOLD = 60  # utilization % below which a GPU is considered idle
+_STALE_AGE_DAYS = 3  # age beyond which a deployment is flagged as possibly forgotten
 
 # GPU tier ranking: higher number = more powerful / more expensive.
 # Used to detect tier misplacement (model on a GPU tier beyond what it needs).
@@ -185,6 +187,7 @@ class TableGenerator:
         table.add_column("Engine",      style="green")
         table.add_column("GPU",         style="yellow")
         table.add_column("Replicas",    justify="right")
+        table.add_column("Age",         justify="right")
         table.add_column("GPU Util",    justify="right")
         table.add_column("MFU",         justify="right")
         table.add_column("$/1K tokens", justify="right")
@@ -193,12 +196,16 @@ class TableGenerator:
 
         any_misplaced = False
         any_unknown = False
+        any_stale = False
         for spec in modelspecs:
             model_name = spec.model.name or spec.metadata.name
             if len(model_name) > 30:
                 model_name = model_name[:27] + "..."
 
             gpu_info = self._format_gpu_info(spec)
+            age_str, is_stale = self._format_age(spec.kubernetes.creation_timestamp)
+            if is_stale:
+                any_stale = True
             gpu_util = self._format_gpu_utilization(spec)
             cost_hr, idle_day = self._compute_deployment_costs(spec, gpu_cost_override)
 
@@ -228,6 +235,7 @@ class TableGenerator:
                 spec.engine.name,
                 gpu_info,
                 str(spec.resources.replicas),
+                age_str,
                 gpu_util,
                 mfu_str,
                 cpt_str,
@@ -237,12 +245,14 @@ class TableGenerator:
 
         self.console.print()
         self.console.print(table)
-        if any_misplaced or any_unknown:
+        if any_misplaced or any_unknown or any_stale:
             legend = []
             if any_misplaced:
                 legend.append("[yellow]⚠[/yellow] tier larger than this model requires")
             if any_unknown:
                 legend.append("[dim]?[/dim] model size unknown — fit not checked")
+            if any_stale:
+                legend.append(f"[yellow]Age[/yellow] running {_STALE_AGE_DAYS}+ days — confirm it's still needed")
             self.console.print(f"  [dim]{'   ·   '.join(legend)}[/dim]")
         self.print_waste_summary(modelspecs, gpu_cost_override, unallocated_nodes, node_cost_override, fragmented_nodes, pending_gpu_pods)
         self.console.print()
@@ -650,6 +660,35 @@ class TableGenerator:
         
         return ", ".join(parts)
     
+    def _format_age(self, creation_timestamp: Optional[str]) -> tuple[str, bool]:
+        """
+        Format deployment age as a short duration string.
+
+        Returns (display_string, is_stale) where is_stale flags deployments
+        running longer than _STALE_AGE_DAYS — candidates for "did you forget
+        to tear this down?".
+        """
+        if not creation_timestamp:
+            return "[dim]?[/dim]", False
+
+        try:
+            created = datetime.fromisoformat(creation_timestamp)
+        except ValueError:
+            return "[dim]?[/dim]", False
+
+        now = datetime.now(created.tzinfo) if created.tzinfo else datetime.now(timezone.utc).replace(tzinfo=None)
+        seconds = (now - created).total_seconds()
+
+        if seconds < 3600:
+            text = f"{max(int(seconds // 60), 1)}m"
+        elif seconds < 86400:
+            text = f"{int(seconds // 3600)}h"
+        else:
+            text = f"{int(seconds // 86400)}d"
+
+        is_stale = seconds >= _STALE_AGE_DAYS * 86400
+        return (f"[yellow]{text}[/yellow]" if is_stale else text), is_stale
+
     def _format_gpu_utilization(self, spec: ModelSpec) -> str:
         """Format average GPU utilization for display."""
         gpus = spec.resources.gpus

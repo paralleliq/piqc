@@ -402,7 +402,11 @@ class InferenceDeployment(BaseModel):
         default_factory=datetime.utcnow,
         description="Detection timestamp",
     )
-    
+    created_at: Optional[datetime] = Field(
+        None,
+        description="Earliest pod creation timestamp across this deployment's pods",
+    )
+
     # Raw data for further processing
     container_image: Optional[str] = Field(None, description="Container image")
     container_args: list[str] = Field(default_factory=list, description="Container arguments")
