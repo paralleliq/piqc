@@ -3,6 +3,7 @@
   <img src="https://img.shields.io/badge/Python-3.11+-green?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>
   <img src="https://img.shields.io/badge/License-Apache%202.0-orange?style=for-the-badge" alt="License"/>
   <img src="https://img.shields.io/badge/vLLM-Supported-purple?style=for-the-badge" alt="vLLM"/>
+  <img src="https://img.shields.io/badge/Ray%20Serve-Supported-blue?style=for-the-badge" alt="Ray Serve"/>
   <img src="https://img.shields.io/github/stars/paralleliq/piqc?style=for-the-badge&logo=github&color=yellow" alt="GitHub Stars"/>
 </p>
 
@@ -47,7 +48,7 @@ piqc surfaces three types of waste that standard Kubernetes monitoring (`kubectl
 - **Tier misplacement** — models running on GPU tiers with far more memory or compute than they need
 - **Dark capacity** — GPU nodes with no pods scheduled at all
 
-It works with any Kubernetes cluster running GPU inference workloads — GKE, EKS, AKS, on-prem, or bare metal. vLLM is the primary supported inference framework. Hardware fact collection is pluggable — see [Contributing a Hardware Plugin](#contributing-a-hardware-plugin).
+It works with any Kubernetes cluster running GPU inference workloads — GKE, EKS, AKS, on-prem, or bare metal. vLLM is the primary supported inference framework, with Ray Serve workloads also detected (GPU type, utilization, and cost — deeper runtime metrics like KV cache and token throughput are vLLM-specific). Hardware fact collection is pluggable — see [Contributing a Hardware Plugin](#contributing-a-hardware-plugin).
 
 ---
 
@@ -147,9 +148,9 @@ poetry run piqc scan --format table
 ## ✨ Features
 
 ### 🔍 Intelligent Discovery
-- **Auto-Detection**: Automatically discovers vLLM inference deployments across all namespaces
+- **Auto-Detection**: Automatically discovers vLLM and Ray Serve inference deployments across all namespaces
 - **Weighted Confidence Scoring**: Uses multiple signals (images, env vars, CLI args, labels) with weighted scoring
-- **Framework Detection**: Identifies vLLM with high accuracy using pattern matching and heuristics
+- **Framework Detection**: Identifies vLLM and Ray Serve with high accuracy using pattern matching and heuristics
 
 ### 📊 Comprehensive Metrics Collection
 - **GPU Metrics**: Real-time GPU utilization, memory, temperature, and power via `nvidia-smi`
