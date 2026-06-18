@@ -192,6 +192,7 @@ class TableGenerator:
         table.add_column("Idle $/day",  justify="right")
 
         any_misplaced = False
+        any_unknown = False
         for spec in modelspecs:
             model_name = spec.model.name or spec.metadata.name
             if len(model_name) > 30:
@@ -213,7 +214,14 @@ class TableGenerator:
             is_misplaced, _, _ = self._compute_misplacement(spec, gpu_cost_override)
             if is_misplaced:
                 any_misplaced = True
-                model_name = f"{model_name} [yellow]*[/yellow]"
+                gpu_info = f"{gpu_info} [yellow]⚠[/yellow]"
+            else:
+                param_billions = _parse_param_billions(spec.model.name or "")
+                if param_billions is not None:
+                    gpu_info = f"{gpu_info} [green]✓[/green]"
+                else:
+                    any_unknown = True
+                    gpu_info = f"{gpu_info} [dim]?[/dim]"
 
             table.add_row(
                 model_name,
@@ -229,8 +237,13 @@ class TableGenerator:
 
         self.console.print()
         self.console.print(table)
-        if any_misplaced:
-            self.console.print("  [dim][yellow]*[/yellow] running on a GPU tier larger than this model requires (tier misplacement)[/dim]")
+        if any_misplaced or any_unknown:
+            legend = []
+            if any_misplaced:
+                legend.append("[yellow]⚠[/yellow] tier larger than this model requires")
+            if any_unknown:
+                legend.append("[dim]?[/dim] model size unknown — fit not checked")
+            self.console.print(f"  [dim]{'   ·   '.join(legend)}[/dim]")
         self.print_waste_summary(modelspecs, gpu_cost_override, unallocated_nodes, node_cost_override, fragmented_nodes, pending_gpu_pods)
         self.console.print()
     
