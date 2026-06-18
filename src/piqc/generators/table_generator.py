@@ -190,8 +190,8 @@ class TableGenerator:
         table.add_column("$/1K tokens", justify="right")
         table.add_column("$/hr",        justify="right")
         table.add_column("Idle $/day",  justify="right")
-        table.add_column("Tier Fit",    justify="center")
 
+        any_misplaced = False
         for spec in modelspecs:
             model_name = spec.model.name or spec.metadata.name
             if len(model_name) > 30:
@@ -210,12 +210,10 @@ class TableGenerator:
             cpt = self._compute_cost_per_1k_tokens(spec, gpu_cost_override)
             cpt_str = f"${cpt:.4f}" if cpt is not None else "[dim]N/A[/dim]"
 
-            is_misplaced, _, min_label = self._compute_misplacement(spec, gpu_cost_override)
+            is_misplaced, _, _ = self._compute_misplacement(spec, gpu_cost_override)
             if is_misplaced:
-                tier_str = f"[yellow]⚠ >{min_label}[/yellow]"
-            else:
-                param_billions = _parse_param_billions(spec.model.name or "")
-                tier_str = "[green]✓[/green]" if param_billions is not None else "[dim]?[/dim]"
+                any_misplaced = True
+                model_name = f"{model_name} [yellow]*[/yellow]"
 
             table.add_row(
                 model_name,
@@ -227,11 +225,12 @@ class TableGenerator:
                 cpt_str,
                 cost_str,
                 idle_str,
-                tier_str,
             )
 
         self.console.print()
         self.console.print(table)
+        if any_misplaced:
+            self.console.print("  [dim][yellow]*[/yellow] running on a GPU tier larger than this model requires (tier misplacement)[/dim]")
         self.print_waste_summary(modelspecs, gpu_cost_override, unallocated_nodes, node_cost_override, fragmented_nodes, pending_gpu_pods)
         self.console.print()
     
