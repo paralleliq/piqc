@@ -57,39 +57,43 @@ It works with any Kubernetes cluster running GPU inference workloads — GKE, EK
 Run `piqc scan` against your cluster and get an instant cost report:
 
 ```
-                                                    Discovered Inference Deployments
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
-┃ Deployment                  ┃ Engine  ┃ GPU              ┃ Replicas ┃ GPU Util ┃  MFU ┃ $/1K tokens ┃   $/hr ┃   Idle $/day ┃   Tier Fit   ┃ Namespace       ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
-│ meta-llama/Llama-3-70B-Inst │ vllm    │ 8xH100-SXM4-80GB │        2 │       4% │ 3.1% │     $0.0842 │ $68.00 │    $1,566.72 │ ⚠ >A100-80GB │ production      │
-│ mistral-7b-instruct         │ vllm    │ 1xA100-SXM4-40GB │        1 │      11% │ 8.4% │     $0.0073 │  $2.50 │       $53.40 │    ⚠ >T4     │ production      │
-│ codellama-34b-staging       │ vllm    │ 4xH100-SXM4-80GB │        1 │       0% │  N/A │         N/A │ $17.00 │      $408.00 │ ⚠ >A100-40GB │ staging         │
-│ embedding-bge-large         │ vllm    │ 1xT4             │        3 │      82% │  N/A │     $0.0002 │  $1.35 │        $5.83 │      ✓       │ shared-services │
-│ unknown-runtime-7f3a2       │ unknown │ 2xA100-SXM4-80GB │        1 │      N/A │  N/A │         N/A │  $7.00 │ util unknown │      ?       │ ml-platform     │
-└─────────────────────────────┴─────────┴──────────────────┴──────────┴──────────┴──────┴─────────────┴────────┴──────────────┴──────────────┴─────────────────┘
+                                              Discovered Inference Deployments
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━┳━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃ Deployment                  ┃ Engine  ┃ GPU                ┃ Replicas ┃ Age ┃ GPU Util ┃  MFU ┃ $/1K tokens ┃   $/hr ┃   Idle $/day ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━╇━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ meta-llama/Llama-3-70B-Inst │ vllm    │ 8xH100-SXM4-80GB ⚠ │        2 │  6h │       4% │ 3.1% │     $0.0842 │ $68.00 │    $1,566.72 │
+│ mistral-7b-instruct         │ vllm    │ 1xA100-SXM4-40GB ⚠ │        1 │  2d │      11% │ 8.4% │     $0.0073 │  $2.50 │       $53.40 │
+│ codellama-34b-staging       │ vllm    │ 4xH100-SXM4-80GB ⚠ │        1 │ 19d │       0% │  N/A │         N/A │ $17.00 │      $408.00 │
+│ embedding-bge-large         │ vllm    │ 1xT4 ✓             │        3 │ 14h │      82% │  N/A │     $0.0002 │  $1.35 │        $5.83 │
+│ unknown-runtime-7f3a2       │ unknown │ 2xA100-SXM4-80GB ? │        1 │ 31d │      N/A │  N/A │         N/A │  $7.00 │ util unknown │
+└─────────────────────────────┴─────────┴────────────────────┴──────────┴─────┴──────────┴──────┴─────────────┴────────┴──────────────┘
+
+  ⚠ tier larger than this model requires   ·   ? model size unknown — fit not checked   ·   Age running 3+ days — confirm it's still needed
 
 ╭──────────────────────────────────── Cost Summary ──────────────────────────────────────╮
 │   Total GPU spend rate      : $95.85/hr                                                │
 │                                                                                        │
-│   Leased & idle (util <60%) : $2,033.95/day  (pods running, GPUs underused)            │
+│   Leased & idle (util <60%) : $2,033.95/day  (low utilization — may reflect traffic    │
+│ patterns; worth investigating)                                                         │
 │   Unallocated nodes         : $1,152.00/day  (12 GPU(s) with no pods scheduled)        │
 │   Tier misplacement         :   $721.20/day  (3 model(s) on oversized GPU tier)        │
 │                                                                                        │
-│   Total estimated leak      : $3,907.15/day  ($1,426,110/yr)                           │
+│   Total estimated leak      : $3,907.15/day  ($1,426,110/yr at current rate)           │
+│                                                                                        │
+│   Confirmed waste   : unallocated nodes, tier misplacement                             │
+│   Signals to investigate: low GPU utilization (verify against traffic data)            │
 │                                                                                        │
 │   Avg MFU (active deployments) : 15.7%  (healthy range: 30–60%)                        │
 ╰────────────────────────────────────────────────────────────────────────────────────────╯
-
-  → Continuous monitoring, alerts & remediation: paralleliq.ai
+  ─────────────────────────────────────────────────────────────
+  → Want to know what this waste is actually costing you?
+  Paralleliq turns these signals into confirmed findings with dollar impact,
+  continuous monitoring, and automated remediation — so you act on facts, not guesses.
+  Running proprietary models or on-prem hardware? We'll configure it for your exact costs.
+  Free to get started: paralleliq.ai  ·  Questions? sam@paralleliq.ai
 ```
 
 **piqc is free and open source.** The scan gives you the full picture — what is running, on what hardware, at what cost, and where the waste is. For continuous monitoring, alerting across your fleet, and automated remediation workflows, see [paralleliq.ai](https://paralleliq.ai).
-```
-
-piqc surfaces three types of waste:
-- **Idle GPUs** — pods running, GPUs sitting near-empty
-- **Tier misplacement** — a 7B model on an H100 that only needs a T4
-- **Unallocated nodes** — GPU nodes with no pods scheduled at all
 
 ---
 
@@ -341,12 +345,14 @@ piqc version
 
 Run `piqc scan --format table` — no flags required. See the [output example](#what-youll-see) above.
 
-**Tier Fit column:**
+**GPU column markers** (tier fit, shown inline next to the GPU type):
 | Symbol | Meaning |
 |--------|---------|
 | `✓` | Model is on an appropriate GPU tier for its size |
-| `⚠ >T4` | Model is over-provisioned — minimum sufficient tier shown |
-| `?` | Parameter count not parseable from model name |
+| `⚠` | Model is over-provisioned for an oversized GPU tier |
+| `?` | Parameter count not parseable from model name — fit not checked |
+
+**Age column:** shown as `5m` / `2h` / `19d` since the deployment's pods were created. Deployments running 3+ days are highlighted — long-running GPU allocations are easy to forget about and keep billing unnoticed.
 
 ### YAML Format
 
