@@ -8,6 +8,9 @@ This project adheres to [Semantic Versioning](https://semver.org/) and the [Keep
 
 ## [Unreleased]
 
+### Fixed
+- The deployments summary table silently crushed every column to 1-2 characters (or blank) when the terminal was narrower than ~100 columns, making it look broken rather than just narrow. Now prints a one-line warning recommending `--format yaml`/`--format json` when the terminal is too narrow to render the table readably.
+
 ---
 
 ## [1.2.0] — 2026-06-20
