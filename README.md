@@ -121,7 +121,23 @@ kubectl delete job piqc-scan -n kube-system
 
 ---
 
-### Option 2: Run with Docker from your laptop
+### Option 2: Install from PyPI and run locally
+
+```bash
+# Recommended — pipx installs piqc into its own isolated environment
+pipx install piqc
+
+# Or with pip (see warning below)
+pip install piqc
+
+piqc scan --format table
+```
+
+> **Use `pipx`, not bare `pip install`, if you already have other Python CLI tools on your machine.** piqc requires pydantic v2. Tools like `dstack` pin pydantic v1, so a plain `pip install piqc` into a shared environment (e.g. your conda base) can silently up/downgrade pydantic and break them. `pipx` keeps piqc's dependencies fully isolated, so this can't happen.
+
+---
+
+### Option 3: Run with Docker from your laptop
 
 ```bash
 # Export a static kubeconfig with embedded credentials
@@ -138,7 +154,7 @@ Supports both `linux/amd64` and `linux/arm64`.
 
 ---
 
-### Option 3: Install from source
+### Option 4: Install from source
 
 ```bash
 git clone https://github.com/paralleliq/piqc.git
@@ -456,6 +472,17 @@ The first object is a normal scanned workload. The second is a node-scoped objec
 - **Python**: 3.11 or higher
 - **Kubernetes Access**: Valid kubeconfig with cluster access
 - **Poetry**: For development installation
+
+### Install from PyPI (recommended)
+
+```bash
+# Isolated install — won't conflict with other Python tools on your machine
+pipx install piqc
+
+piqc --version
+```
+
+`pip install piqc` also works, but installs into whatever environment is currently active. piqc requires pydantic v2; tools like `dstack` pin pydantic v1, so installing piqc with plain `pip` into an environment that already has `dstack` (or anything else pinned to pydantic v1) can break it. If you don't have `pipx`, install it first: `python3 -m pip install --user pipx`.
 
 ### Install from Source
 

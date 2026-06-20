@@ -11,6 +11,9 @@ This project adheres to [Semantic Versioning](https://semver.org/) and the [Keep
 ### Fixed
 - The deployments summary table silently crushed every column to 1-2 characters (or blank) when the terminal was narrower than ~100 columns, making it look broken rather than just narrow. Now prints a one-line warning recommending `--format yaml`/`--format json` when the terminal is too narrow to render the table readably.
 
+### Changed
+- README install instructions now recommend `pipx install piqc` over bare `pip install piqc`. piqc requires pydantic v2; installing it with plain `pip` into a shared environment that already has a pydantic-v1-pinned tool (e.g. `dstack`) can silently break that tool. `pipx` avoids this by isolating piqc's dependencies.
+
 ---
 
 ## [1.2.0] — 2026-06-20
