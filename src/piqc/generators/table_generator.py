@@ -176,6 +176,17 @@ class TableGenerator:
             self.console.print("[dim]No inference deployments found[/dim]")
             return
 
+        # This table has 10 columns - below this width Rich crushes every
+        # column to 1-2 characters with "..." rather than something readable.
+        # Warn instead of silently rendering an unreadable table.
+        _MIN_USABLE_WIDTH = 100
+        if self.console.width < _MIN_USABLE_WIDTH:
+            self.console.print(
+                f"[yellow]Terminal is {self.console.width} columns wide - "
+                f"this table needs at least {_MIN_USABLE_WIDTH} to render readably.[/yellow]\n"
+                "[dim]Widen your terminal, or use --format yaml / --format json for a width-independent view.[/dim]\n"
+            )
+
         table = Table(
             title="Discovered Inference Deployments",
             show_header=True,
