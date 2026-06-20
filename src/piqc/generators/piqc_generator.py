@@ -7,7 +7,7 @@ with full provenance tracking and error reporting.
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -703,6 +703,33 @@ class PIQCGenerator:
                 data_confidence=Confidence.HIGH,
                 observed_at=self._timestamp,
             )
+
+        # k8s.ageHours — workload age, derived from pod creation timestamp.
+        # Already collected for the CLI "Age" column; surfaced as a fact so
+        # idle/forgotten-workload detection can use it too.
+        creation_timestamp = spec.kubernetes.creation_timestamp
+        if creation_timestamp:
+            try:
+                created = datetime.fromisoformat(creation_timestamp)
+            except ValueError:
+                created = None
+            if created is not None:
+                now = (
+                    datetime.now(created.tzinfo)
+                    if created.tzinfo
+                    else datetime.now(timezone.utc).replace(tzinfo=None)
+                )
+                age_hours = (now - created).total_seconds() / 3600
+                facts["k8s.ageHours"] = FactValue(
+                    value=round(age_hours, 2),
+                    source=Source(
+                        type=SourceType.K8S_API,
+                        method="pod_spec",
+                    ),
+                    data_confidence=Confidence.HIGH,
+                    observed_at=self._timestamp,
+                    units="hours",
+                )
 
     def _extract_endpoint_facts(
         self,

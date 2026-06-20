@@ -211,6 +211,7 @@ OPTIONAL_FACTS = [
     "k8s.replicas",
     "k8s.cpuRequest",
     "k8s.memoryRequest",
+    "k8s.ageHours",
     "obs.vllm.requestsRunning",
     "obs.vllm.requestsWaiting",
     "obs.vllm.kvCacheUsagePct",
