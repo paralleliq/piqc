@@ -35,6 +35,10 @@ spec:
         framework: vllm
         team: ml-platform
     spec:
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
       containers:
       - name: vllm
         image: vllm/vllm-openai:latest
