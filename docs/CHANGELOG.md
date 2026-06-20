@@ -8,6 +8,10 @@ This project adheres to [Semantic Versioning](https://semver.org/) and the [Keep
 
 ## [Unreleased]
 
+---
+
+## [1.2.0] — 2026-06-20
+
 ### Added
 - `CODE_OF_CONDUCT.md` — Community conduct standards
 - `SECURITY.md` — Security policy and vulnerability disclosure process
@@ -15,6 +19,7 @@ This project adheres to [Semantic Versioning](https://semver.org/) and the [Keep
 - `CHANGELOG.md` — This file
 - `k8s.ageHours` fact — workload age in hours, derived from the pod creation timestamp already collected for the CLI "Age" column. Lets downstream consumers (e.g. the Paralleliq optimization layer) detect long-running idle workloads, not just display age in a terminal table.
 - Node-level GPU capacity is now exported as a fact, not just shown in the CLI table. Nodes with unscheduled GPU capacity (see "Node-Level GPU Capacity Analysis" in `1.1.0` below) are emitted as their own node-scoped object (`ns/gpu-pool/node/<name>`) with `hardware.gpuType`, `hardware.gpuCount`, `node.allocatedGpuCount`, and `node.unallocatedGpuCount` — piqc's first node-level (rather than workload-level) object in the facts bundle.
+- Published to PyPI for the first time — `pip install piqc` / `pipx install piqc`, no Docker or git clone required.
 
 ### Changed
 - `CONTRIBUTING.md` — Expanded with development setup, coding standards, and test guidance
@@ -153,6 +158,8 @@ The first stable release of **PIQC** — Production Inference Quality Control. A
 | Version | Date | Highlights |
 |---|---|---|
 | `1.0.0` | 2026-01-30 | Initial stable release |
+| `1.1.0` | 2026-03-28 | Revenue leak & efficiency reporting, node-level GPU capacity analysis (CLI only) |
+| `1.2.0` | 2026-06-20 | `k8s.ageHours` + node-level facts exported to the bundle, first PyPI release |
 
 ---
 
@@ -169,8 +176,8 @@ See [GOVERNANCE.md](GOVERNANCE.md) and open [Issues](https://github.com/parallel
 
 ---
 
-[Unreleased]: https://github.com/paralleliq/piqc/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/paralleliq/piqc/releases/tag/v1.0.0
+[Unreleased]: https://github.com/paralleliq/piqc/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/paralleliq/piqc/releases/tag/v1.2.0
 
 ---
 

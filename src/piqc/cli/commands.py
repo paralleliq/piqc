@@ -2,7 +2,7 @@
 CLI commands for piqc.
 
 Provides the command-line interface for scanning Kubernetes clusters
-and generating ModelSpec documentation.
+and collecting facts about vLLM inference deployments.
 """
 
 import sys
@@ -108,10 +108,10 @@ def _push_bundle(
 @click.version_option(version=__version__, prog_name="piqc")
 def main() -> None:
     """
-    piqc - Kubernetes vLLM Model Discovery Tool.
-    
-    Discovers vLLM inference deployments in Kubernetes clusters
-    and generates standardized ModelSpec documentation.
+    piqc - vLLM-native fact collector for Kubernetes inference fleets.
+
+    Discovers vLLM inference deployments in Kubernetes clusters and
+    collects facts on GPU waste, idle capacity, and tier misplacement.
     """
     pass
 
@@ -274,10 +274,10 @@ def scan(
 ) -> None:
     """
     Scan Kubernetes cluster for vLLM model deployments.
-    
-    Discovers vLLM inference workloads and generates standardized
-    ModelSpec documentation with optional runtime metrics.
-    
+
+    Discovers vLLM inference workloads and collects facts about them,
+    including hardware, configuration, and optional runtime metrics.
+
     \b
     Examples:
         # Scan entire cluster

@@ -1,11 +1,14 @@
 [tool.poetry]
 name = "piqc"
-version = "1.0.0"
-description = "Kubernetes introspection tool for discovering AI/ML model deployments and generating standardized ModelSpec documentation"
+version = "1.2.0"
+description = "Open-source vLLM-native fact collector for AI/ML inference fleets on Kubernetes — detects GPU waste, idle capacity, and tier misplacement"
 authors = ["ParallelIQ Cloud <engineering@paralleliq.ai>"]
 license = "Apache-2.0"
 readme = "README.md"
 packages = [{include = "piqc", from = "src"}]
+homepage = "https://paralleliq.ai"
+repository = "https://github.com/paralleliq/piqc"
+documentation = "https://github.com/paralleliq/piqc#readme"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",

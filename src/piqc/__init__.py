@@ -1,10 +1,10 @@
 """
 piqc
 
-A Kubernetes introspection tool for discovering AI/ML model deployments
-and generating standardized ModelSpec documentation.
+Open-source vLLM-native fact collector for AI/ML inference fleets on
+Kubernetes — detects GPU waste, idle capacity, and tier misplacement.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.2.0"
 __author__ = "ParallelIQ Cloud"
 __license__ = "Apache-2.0"
