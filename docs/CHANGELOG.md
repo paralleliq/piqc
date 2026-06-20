@@ -13,6 +13,8 @@ This project adheres to [Semantic Versioning](https://semver.org/) and the [Keep
 - `SECURITY.md` — Security policy and vulnerability disclosure process
 - `GOVERNANCE.md` — Project governance model and decision-making process
 - `CHANGELOG.md` — This file
+- `k8s.ageHours` fact — workload age in hours, derived from the pod creation timestamp already collected for the CLI "Age" column. Lets downstream consumers (e.g. the Paralleliq optimization layer) detect long-running idle workloads, not just display age in a terminal table.
+- Node-level GPU capacity is now exported as a fact, not just shown in the CLI table. Nodes with unscheduled GPU capacity (see "Node-Level GPU Capacity Analysis" in `1.1.0` below) are emitted as their own node-scoped object (`ns/gpu-pool/node/<name>`) with `hardware.gpuType`, `hardware.gpuCount`, `node.allocatedGpuCount`, and `node.unallocatedGpuCount` — piqc's first node-level (rather than workload-level) object in the facts bundle.
 
 ### Changed
 - `CONTRIBUTING.md` — Expanded with development setup, coding standards, and test guidance

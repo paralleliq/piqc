@@ -403,10 +403,10 @@ With `--output-piqc`, generates a standardized facts bundle for integration with
 ```json
 {
   "schemaVersion": "piqc-scan.v0.1",
-  "generatedAt": "2024-01-07T12:00:00Z",
+  "generatedAt": "2026-06-20T12:00:00Z",
   "tool": {
     "name": "piqc",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "cluster": {
     "context": "my-context",
@@ -415,17 +415,37 @@ With `--output-piqc`, generates a standardized facts bundle for integration with
   "objects": [
     {
       "workloadId": "ns/inference/deployment/vllm-llama-7b",
+      "kind": "Deployment",
+      "name": "vllm-llama-7b",
+      "namespace": "inference",
       "facts": {
         "runtime.engineType": {"value": "vllm", "dataConfidence": "high"},
         "hardware.gpuType": {"value": "A100-SXM4-80GB", "dataConfidence": "high"},
         "hardware.gpuCount": {"value": 4, "dataConfidence": "high"},
-        "observed.gpuUtilization": {"value": 87, "unit": "%", "dataConfidence": "high"},
-        "observed.kvCacheUsage": {"value": 45.2, "unit": "%", "dataConfidence": "high"}
+        "obs.gpu.memUtilAvgPct": {"value": 87, "dataConfidence": "high"},
+        "obs.vllm.kvCacheUsagePct": {"value": 45.2, "dataConfidence": "high", "units": "%"},
+        "obs.vllm.requestsRunning": {"value": 3, "dataConfidence": "high"},
+        "obs.vllm.requestsWaiting": {"value": 0, "dataConfidence": "high"},
+        "k8s.ageHours": {"value": 18.5, "dataConfidence": "high", "units": "hours"}
+      }
+    },
+    {
+      "workloadId": "ns/gpu-pool/node/h100-node-07",
+      "kind": "Node",
+      "name": "h100-node-07",
+      "namespace": "gpu-pool",
+      "facts": {
+        "hardware.gpuType": {"value": "nvidia-h100-80gb", "dataConfidence": "high"},
+        "hardware.gpuCount": {"value": 4, "dataConfidence": "high"},
+        "node.allocatedGpuCount": {"value": 2, "dataConfidence": "high"},
+        "node.unallocatedGpuCount": {"value": 2, "dataConfidence": "high"}
       }
     }
   ]
 }
 ```
+
+The first object is a normal scanned workload. The second is a node-scoped object — emitted when a node has GPU capacity no pod has requested (the "Dark capacity" case under Waste Detection above); it carries no `runtime.*`/`model.*` facts since it isn't describing a running inference workload.
 
 ---
 
