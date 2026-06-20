@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from piqc import __version__
+from piqc.core.orchestrator import UnallocatedNodeInfo
 from piqc.models.modelspec import ModelSpec
 from piqc.models.piqc_schema import (
     Confidence,
@@ -53,6 +54,7 @@ class PIQCGenerator:
         cluster_context: Optional[str] = None,
         cluster_name: Optional[str] = None,
         namespaces: Optional[list[str]] = None,
+        unallocated_nodes: Optional[list[UnallocatedNodeInfo]] = None,
     ) -> str:
         """
         Generate piqc-facts.json file.
@@ -63,6 +65,10 @@ class PIQCGenerator:
             cluster_context: K8s context name.
             cluster_name: K8s cluster name.
             namespaces: Scanned namespaces.
+            unallocated_nodes: Nodes with GPU capacity no pod has requested
+                (from Orchestrator._analyze_node_capacity). Each becomes its
+                own node-scoped WorkloadObject, since piqc's bundle format
+                has no separate node-level object type today.
 
         Returns:
             Path to generated file.
@@ -72,6 +78,7 @@ class PIQCGenerator:
 
         # Build workload objects
         objects = [self._build_workload(spec) for spec in modelspecs]
+        objects.extend(self._build_node_workload(node) for node in (unallocated_nodes or []))
 
         # Build bundle
         bundle = PIQCBundle(
@@ -103,6 +110,51 @@ class PIQCGenerator:
 
         logger.info(f"Generated PIQC facts bundle: {output_file}")
         return str(output_file)
+
+    def _build_node_workload(self, node: UnallocatedNodeInfo) -> WorkloadObject:
+        """Build a node-scoped WorkloadObject from real node GPU allocation data.
+
+        Deliberately skips _check_required_facts — those checks assume a
+        vLLM/runtime workload, which a node-level object isn't.
+        """
+        workload_id = f"ns/gpu-pool/node/{node.node_name}"
+
+        facts: dict[str, FactValue] = {
+            "hardware.gpuType": FactValue(
+                value=node.gpu_type,
+                source=Source(type=SourceType.K8S_API, method="node_status"),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            ),
+            "hardware.gpuCount": FactValue(
+                value=node.total_gpus,
+                source=Source(type=SourceType.K8S_API, method="node_status"),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            ),
+            "node.allocatedGpuCount": FactValue(
+                value=node.allocated_gpus,
+                source=Source(type=SourceType.K8S_API, method="pod_spec"),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            ),
+            "node.unallocatedGpuCount": FactValue(
+                value=node.unallocated_gpus,
+                source=Source(type=SourceType.K8S_API, method="node_status"),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            ),
+        }
+
+        return WorkloadObject(
+            workload_id=workload_id,
+            kind="Node",
+            name=node.node_name,
+            namespace="gpu-pool",
+            images=None,
+            pods=None,
+            facts=facts,
+        )
 
     def _build_workload(self, spec: ModelSpec) -> WorkloadObject:
         """Build a WorkloadObject from a ModelSpec."""

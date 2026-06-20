@@ -451,6 +451,7 @@ def scan(
                 cluster_context=conn_info.get('context'),
                 cluster_name=conn_info.get('cluster'),
                 namespaces=namespaces,
+                unallocated_nodes=result.unallocated_nodes,
             )
             print_info(f"PIQC facts bundle generated:")
             console.print(f"       File: {piqc_file}")

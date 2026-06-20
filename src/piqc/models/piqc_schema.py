@@ -219,6 +219,8 @@ OPTIONAL_FACTS = [
     "obs.gpu.temperatureC",
     "obs.gpu.powerDrawW",
     "endpoint.httpPort",
+    "node.allocatedGpuCount",
+    "node.unallocatedGpuCount",
     # ==========================================================================
     # MVP Required Facts (added for compatibility)
     # ==========================================================================
