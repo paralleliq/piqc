@@ -253,6 +253,10 @@ pip install paralleliq-dstack-plugin
 
 dstack discovers it automatically via Python entry points — no further configuration required. See the plugin repo for what it does today and its current limitations.
 
+### vLLM Production Stack
+
+*Proposed, pending review.* [vLLM Production Stack](https://github.com/vllm-project/production-stack) is a Helm-based reference deployment for vLLM on Kubernetes, with its own Prometheus/Grafana observability stack and an LMCache-based KV cache offloading tutorial. piqc is complementary, not competing — it sits above that telemetry and turns it into prioritized, costed findings (unallocated GPU capacity, idle deployments, low prefix cache hit rate) rather than another dashboard. A draft tutorial written in their house style, [`docs/integrations/26-detect-gpu-waste.md`](docs/integrations/26-detect-gpu-waste.md), is ready to propose as a PR into their `tutorials/` folder.
+
 ---
 
 ## 📋 Commands
