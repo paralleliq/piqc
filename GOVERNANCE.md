@@ -6,7 +6,7 @@ This document describes the governance model for the **PIQC** project — how de
 
 ## Project Overview
 
-**PIQC** (Production Inference Quality Control) is an open-source Kubernetes-native introspection tool for discovering and documenting AI/LLM inference deployments. It is part of the broader [ParalleliQ](https://paralleliq.ai) ecosystem alongside [ModelSpec](https://github.com/paralleliq/modelspec) and the [PIQC Knowledge Base](https://github.com/paralleliq/piqc-knowledge-base).
+**PIQC** (Production Inference Quality Control) is a source-available Kubernetes-native introspection tool for discovering and documenting AI/LLM inference deployments. It is part of the broader [ParalleliQ](https://paralleliq.ai) ecosystem alongside [ModelSpec](https://github.com/paralleliq/modelspec) and the [PIQC Knowledge Base](https://github.com/paralleliq/piqc-knowledge-base).
 
 ---
 
@@ -159,7 +159,7 @@ Community members are welcome to propose roadmap items via GitHub Issues or Disc
 
 ## Relationship to the ParalleliQ Ecosystem
 
-PIQC is one component of a broader open-source ecosystem:
+PIQC is one component of a broader source-available ecosystem:
 
 | Project | Role |
 |---|---|
