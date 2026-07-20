@@ -216,6 +216,64 @@ class PIQCGenerator:
                 observed_at=self._timestamp,
             )
 
+        # ---------------------------------------------------------------
+        # Engine-agnostic aliases, read from spec.inference directly.
+        # spec.inference (InferenceConfig) is already generically shaped,
+        # not vLLM-specific, so any future engine parser that populates it
+        # gets these facts for free. Do not move this logic into an
+        # engine-gated extractor (see piqc#8 for the SGLang follow-up).
+        # ---------------------------------------------------------------
+        inference = spec.inference
+
+        # model.quantization
+        if inference.quantization:
+            facts["model.quantization"] = FactValue(
+                value=inference.quantization,
+                source=Source(
+                    type=SourceType.K8S_API,
+                    method="container_args",
+                ),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            )
+
+        # model.maxModelLen (alias of the engine-specific max context length fact)
+        if inference.max_model_len:
+            facts["model.maxModelLen"] = FactValue(
+                value=inference.max_model_len,
+                source=Source(
+                    type=SourceType.K8S_API,
+                    method="container_args",
+                ),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+                units="tokens",
+            )
+
+        # runtime.dtype (alias of the engine-specific precision fact)
+        if inference.precision:
+            facts["runtime.dtype"] = FactValue(
+                value=inference.precision,
+                source=Source(
+                    type=SourceType.K8S_API,
+                    method="container_args",
+                ),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            )
+
+        # runtime.tensorParallel (alias of the engine-specific tensor parallel size fact)
+        if inference.tensor_parallel_size:
+            facts["runtime.tensorParallel"] = FactValue(
+                value=inference.tensor_parallel_size,
+                source=Source(
+                    type=SourceType.K8S_API,
+                    method="container_args",
+                ),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            )
+
     def _extract_vllm_facts(
         self,
         spec: ModelSpec,
@@ -302,58 +360,10 @@ class PIQCGenerator:
                 units="%",
             )
 
-        # vllm.quantization (optional extended)
-        if inference.quantization:
-            facts["model.quantization"] = FactValue(
-                value=inference.quantization,
-                source=Source(
-                    type=SourceType.K8S_API,
-                    method="container_args",
-                ),
-                data_confidence=Confidence.HIGH,
-                observed_at=self._timestamp,
-            )
-
-        # =================================================================
-        # MVP Required Facts - Alias Facts for compatibility
-        # =================================================================
-
-        # model.maxModelLen (alias of vllm.maxModelLen)
-        if inference.max_model_len:
-            facts["model.maxModelLen"] = FactValue(
-                value=inference.max_model_len,
-                source=Source(
-                    type=SourceType.K8S_API,
-                    method="container_args",
-                ),
-                data_confidence=Confidence.HIGH,
-                observed_at=self._timestamp,
-                units="tokens",
-            )
-
-        # runtime.dtype (alias of vllm.dtype)
-        if inference.precision:
-            facts["runtime.dtype"] = FactValue(
-                value=inference.precision,
-                source=Source(
-                    type=SourceType.K8S_API,
-                    method="container_args",
-                ),
-                data_confidence=Confidence.HIGH,
-                observed_at=self._timestamp,
-            )
-
-        # runtime.tensorParallel (alias of vllm.tensorParallelSize)
-        if inference.tensor_parallel_size:
-            facts["runtime.tensorParallel"] = FactValue(
-                value=inference.tensor_parallel_size,
-                source=Source(
-                    type=SourceType.K8S_API,
-                    method="container_args",
-                ),
-                data_confidence=Confidence.HIGH,
-                observed_at=self._timestamp,
-            )
+        # Note: model.quantization, model.maxModelLen, runtime.dtype, and
+        # runtime.tensorParallel used to be emitted here as vLLM-only aliases.
+        # They now live in _extract_runtime_facts(), reading from spec.inference
+        # directly, so they populate for any engine, not just vLLM.
 
     def _extract_hardware_facts(
         self,
