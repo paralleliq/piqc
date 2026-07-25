@@ -13,15 +13,15 @@ nodes:
     extraPortMappings:
       # vLLM service
       - containerPort: 30800
-        hostPort: 8000
+        hostPort: 18000
         protocol: TCP
       # Triton HTTP
       - containerPort: 30801
-        hostPort: 8001
+        hostPort: 18001
         protocol: TCP
       # Triton gRPC
       - containerPort: 30850
-        hostPort: 8500
+        hostPort: 18500
         protocol: TCP
 
 # Networking configuration
