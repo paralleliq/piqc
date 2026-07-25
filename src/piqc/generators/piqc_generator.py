@@ -517,6 +517,34 @@ class PIQCGenerator:
                     units="W",
                 )
 
+        cpu = spec.resources.cpu
+        if cpu is not None:
+            # obs.cpu.utilAvgPct (optional extended)
+            facts["obs.cpu.utilAvgPct"] = FactValue(
+                value=cpu.utilization_percent,
+                source=Source(
+                    type=SourceType.POD_EXEC,
+                    method="proc_stat",
+                    ref=cpu.pod_name,
+                ),
+                data_confidence=Confidence.MEDIUM,
+                observed_at=self._timestamp,
+                units="%",
+            )
+
+            # obs.cpu.iowaitAvgPct (optional extended)
+            facts["obs.cpu.iowaitAvgPct"] = FactValue(
+                value=cpu.iowait_percent,
+                source=Source(
+                    type=SourceType.POD_EXEC,
+                    method="proc_stat",
+                    ref=cpu.pod_name,
+                ),
+                data_confidence=Confidence.MEDIUM,
+                observed_at=self._timestamp,
+                units="%",
+            )
+
         # vLLM runtime metrics
         if spec.runtime_state and spec.runtime_state.vllm:
             vllm = spec.runtime_state.vllm

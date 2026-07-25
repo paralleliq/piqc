@@ -152,13 +152,37 @@ class GPUInfo(BaseModel):
     pod_name: Optional[str] = Field(None, alias="podName", description="Pod name")
 
 
+class CPUInfo(BaseModel):
+    """Real-time CPU utilization for a deployment, sampled via /proc/stat."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    utilization_percent: float = Field(
+        ...,
+        alias="utilizationPercent",
+        ge=0.0,
+        le=100.0,
+        description="CPU utilization percentage",
+    )
+    iowait_percent: float = Field(
+        ...,
+        alias="iowaitPercent",
+        ge=0.0,
+        le=100.0,
+        description="Percentage of time CPU was idle while waiting on I/O",
+    )
+    cpu_count: Optional[int] = Field(None, alias="cpuCount", description="Number of CPU cores observed")
+    pod_name: Optional[str] = Field(None, alias="podName", description="Pod name")
+
+
 class ResourceInfo(BaseModel):
     """Resource allocation information."""
-    
+
     model_config = ConfigDict(populate_by_name=True)
-    
+
     replicas: int = Field(..., description="Number of pod replicas")
     gpus: list[GPUInfo] = Field(default_factory=list, description="GPU information")
+    cpu: Optional[CPUInfo] = Field(None, description="Real-time CPU utilization")
     gpu_memory_utilization: Optional[float] = Field(
         None,
         alias="gpuMemoryUtilization",
@@ -221,6 +245,11 @@ class DataCompleteness(BaseModel):
         False,
         alias="gpuMetrics",
         description="GPU metrics collected",
+    )
+    cpu_metrics: bool = Field(
+        False,
+        alias="cpuMetrics",
+        description="CPU metrics collected",
     )
     runtime_metrics: bool = Field(
         False,
