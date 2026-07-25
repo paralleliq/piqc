@@ -218,6 +218,8 @@ OPTIONAL_FACTS = [
     "obs.vllm.prefixCacheHitRate",
     "obs.gpu.temperatureC",
     "obs.gpu.powerDrawW",
+    "obs.cpu.utilAvgPct",
+    "obs.cpu.iowaitAvgPct",
     "endpoint.httpPort",
     "node.allocatedGpuCount",
     "node.unallocatedGpuCount",

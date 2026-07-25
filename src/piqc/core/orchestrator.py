@@ -13,6 +13,7 @@ from typing import Optional
 
 from piqc import __version__
 from piqc.collectors.config_collector import ConfigCollector
+from piqc.collectors.cpu_collector import CPUCollector
 from piqc.collectors.gpu_collector import GPUCollector, GPUMetrics
 from piqc.collectors.vllm_api_client import (
     KubectlExecVLLMClient,
@@ -25,6 +26,7 @@ from piqc.core.discovery import DeploymentDiscovery
 from piqc.core.k8s_client import K8sClient
 from piqc.models.modelspec import (
     CollectionMetadata,
+    CPUInfo,
     DataCompleteness,
     Endpoint,
     EngineInfo,
@@ -40,7 +42,7 @@ from piqc.models.modelspec import (
     VLLMRuntimeState,
 )
 from piqc.parsers.vllm_parser import VLLMParser
-from piqc.utils.exceptions import GPUMetricsUnavailableError
+from piqc.utils.exceptions import CPUMetricsUnavailableError, GPUMetricsUnavailableError
 from piqc.utils.logger import get_logger
 
 
@@ -157,6 +159,7 @@ class ScanOrchestrator:
         self.config_collector = ConfigCollector()
         self.vllm_collector = VLLMCollector()
         self.gpu_collector = GPUCollector(k8s_client, exec_timeout=timeout)
+        self.cpu_collector = CPUCollector(k8s_client, exec_timeout=timeout)
         
         self.vllm_parser = VLLMParser()
     
@@ -389,7 +392,30 @@ class ScanOrchestrator:
                         logger.debug(f"Inferred GPU type from node labels: {gpu_type}")
             except Exception as e:
                 logger.debug(f"Failed to infer GPU type from node: {e}")
-        
+
+        # Collect CPU metrics if enabled
+        cpu_info: Optional[CPUInfo] = None
+        has_cpu_metrics = False
+        if self.enable_exec and deployment.pod_names:
+            pod_name = deployment.pod_names[0]
+            try:
+                cpu_metrics = self.cpu_collector.collect(
+                    pod_name=pod_name,
+                    namespace=deployment.namespace,
+                )
+                if cpu_metrics:
+                    has_cpu_metrics = True
+                    cpu_info = CPUInfo(
+                        utilization_percent=cpu_metrics.utilization_percent,
+                        iowait_percent=cpu_metrics.iowait_percent,
+                        cpu_count=cpu_metrics.cpu_count,
+                        pod_name=pod_name,
+                    )
+            except CPUMetricsUnavailableError as e:
+                warnings.append(f"{deployment.name}: {e.reason or 'CPU metrics unavailable'}")
+            except Exception as e:
+                warnings.append(f"{deployment.name}: CPU collection failed - {e}")
+
         # Parse framework-specific configuration
         model_info, inference_config = self._parse_config(deployment)
         
@@ -420,6 +446,7 @@ class ScanOrchestrator:
         resource_info = ResourceInfo(
             replicas=deployment.replicas,
             gpus=gpu_infos,
+            cpu=cpu_info,
             gpu_memory_utilization=None,
             cpu_request=deployment.cpu_request,
             cpu_limit=container_config.cpu_limit if container_config else None,
@@ -544,6 +571,7 @@ class ScanOrchestrator:
                 data_completeness=DataCompleteness(
                     static_config=True,
                     gpu_metrics=has_gpu_metrics,
+                    cpu_metrics=has_cpu_metrics,
                     runtime_metrics=has_runtime_metrics,
                 ),
             ),

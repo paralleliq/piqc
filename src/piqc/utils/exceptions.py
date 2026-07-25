@@ -119,6 +119,36 @@ class GPUMetricsUnavailableError(ModelSpecError):
         super().__init__(message, details)
 
 
+class CPUMetricsUnavailableError(ModelSpecError):
+    """
+    Raised when CPU metrics collection fails.
+
+    This is a non-fatal error - the scan will continue without CPU
+    utilization data. Common causes:
+    - /proc/stat not readable (non-Linux container runtime, restrictive PSP/SCC)
+    - Pod exec permissions denied
+    - Pod has no shell (distroless/scratch image)
+    """
+
+    def __init__(
+        self,
+        message: str = "CPU metrics unavailable",
+        pod_name: Optional[str] = None,
+        reason: Optional[str] = None,
+    ) -> None:
+        self.pod_name = pod_name
+        self.reason = reason
+
+        details_parts = []
+        if pod_name:
+            details_parts.append(f"Pod: {pod_name}")
+        if reason:
+            details_parts.append(f"Reason: {reason}")
+
+        details = ", ".join(details_parts) if details_parts else None
+        super().__init__(message, details)
+
+
 class ConfigurationParseError(ModelSpecError):
     """
     Raised when parsing configuration data fails.
