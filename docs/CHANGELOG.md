@@ -8,8 +8,11 @@ This project adheres to [Semantic Versioning](https://semver.org/) and the [Keep
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-07-31
+
 ### Fixed
 - The deployments summary table silently crushed every column to 1-2 characters (or blank) when the terminal was narrower than ~100 columns, making it look broken rather than just narrow. Now prints a one-line warning recommending `--format yaml`/`--format json` when the terminal is too narrow to render the table readably.
+- Package metadata incorrectly declared Apache-2.0 (`pyproject.toml`'s `license` field, its `License :: OSI Approved :: Apache Software License` classifier, and `piqc.__license__`). piqc is licensed under the Business Source License 1.1, converting to Apache 2.0 in January 2028 per `LICENSE` — this was live and incorrect on the published 1.2.0 PyPI release. The classifier is corrected to `License :: Other/Proprietary License`, since BUSL is not OSI-approved.
 
 ### Changed
 - README install instructions now recommend `pipx install piqc` over bare `pip install piqc`. piqc requires pydantic v2; installing it with plain `pip` into a shared environment that already has a pydantic-v1-pinned tool (e.g. `dstack`) can silently break that tool. `pipx` avoids this by isolating piqc's dependencies.

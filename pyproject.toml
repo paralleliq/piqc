@@ -1,9 +1,9 @@
 [tool.poetry]
 name = "piqc"
-version = "1.2.0"
+version = "1.2.1"
 description = "Open-source vLLM-native fact collector for AI/ML inference fleets on Kubernetes — detects GPU waste, idle capacity, and tier misplacement"
 authors = ["ParallelIQ Cloud <engineering@paralleliq.ai>"]
-license = "Apache-2.0"
+license = "BUSL-1.1"
 readme = "README.md"
 packages = [{include = "piqc", from = "src"}]
 homepage = "https://paralleliq.ai"
@@ -14,7 +14,7 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: Apache Software License",
+    "License :: Other/Proprietary License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
