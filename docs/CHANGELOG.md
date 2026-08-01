@@ -8,6 +8,11 @@ This project adheres to [Semantic Versioning](https://semver.org/) and the [Keep
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-08-01
+
+### Added
+- CPU utilization collection via `/proc/stat`. Reads two snapshots a short interval apart inside the target container and computes utilization %/iowait % from the deltas, the same technique `top`/`vmstat` use — no metrics-server or DCGM dependency, just `exec_in_pod()`, matching how `gpu_collector.py` already works. Wired into `_generate_modelspec` unconditionally (whenever `enable_exec` is on), independent of GPU presence.
+
 ## [1.2.1] — 2026-07-31
 
 ### Fixed
