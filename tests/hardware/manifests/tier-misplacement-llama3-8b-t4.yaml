@@ -1,0 +1,109 @@
+# SAMPLE MANIFEST -- one scenario only, not a complete set.
+#
+# Deploys a real Llama-3-8B-Instruct on a real T4 via vLLM's actual public
+# image (not the kind-cluster mock used in tests/integration/) -- a genuine
+# tier mismatch, since 8B in fp16 wants more headroom than a 16GB T4
+# comfortably gives it. Backs tests/hardware/test_tier_misplacement.py.
+#
+# This is the ONLY scenario manifest that exists today. Every other rule in
+# the Bucket A/B scoping (gpu_overprovisioned_v1, token_maxing_v1,
+# low_throughput_v1, idle_trickle_traffic_v1, dark_capacity_v1,
+# fragmentation_v1 -- see strategy discussion 2026-08-03) needs its own
+# manifest or a traffic-pattern variant of this one, written as each is
+# actually verified against real hardware. Do not assume coverage beyond
+# tier-misplacement exists just because this directory does.
+#
+# Prerequisites this manifest does NOT handle:
+#   - A node in the target cluster actually labeled as a T4 (nodeSelector
+#     below uses the common NVIDIA GPU Operator / GKE convention; adjust to
+#     match whatever labeling scheme the real test cluster uses).
+#   - A Hugging Face token with access to meta-llama/Meta-Llama-3-8B-Instruct,
+#     supplied via the hf-token secret referenced below.
+#   - This may crash-loop on startup if the model doesn't fit in 16GB at
+#     default settings -- that's the tier mismatch the test is verifying,
+#     not a bug in this manifest. If it crash-loops before piqc can even
+#     scan it, lower --gpu-memory-utilization or add --max-model-len to get
+#     it stable enough to observe, without fixing the underlying mismatch.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hardware-verification
+  labels:
+    purpose: piqc-hardware-verification
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hf-token
+  namespace: hardware-verification
+type: Opaque
+stringData:
+  token: "REPLACE_WITH_REAL_HF_TOKEN"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tier-misplacement-llama3-8b
+  namespace: hardware-verification
+  labels:
+    app: tier-misplacement-llama3-8b
+    app.kubernetes.io/name: vllm
+    app.kubernetes.io/component: inference-server
+    scenario: tier-misplacement
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tier-misplacement-llama3-8b
+  template:
+    metadata:
+      labels:
+        app: tier-misplacement-llama3-8b
+        app.kubernetes.io/name: vllm
+        framework: vllm
+    spec:
+      # Adjust to whatever node-labeling convention the real cluster uses.
+      nodeSelector:
+        nvidia.com/gpu.product: Tesla-T4
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+          args:
+            - "--model"
+            - "meta-llama/Llama-3-8B-Instruct"
+            - "--served-model-name"
+            - "meta-llama/Llama-3-8B-Instruct"
+            - "--dtype"
+            - "half"
+            - "--max-model-len"
+            - "4096"
+            - "--gpu-memory-utilization"
+            - "0.85"
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "4"
+              memory: "16Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: "24Gi"
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 20

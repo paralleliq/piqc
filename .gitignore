@@ -82,6 +82,8 @@ output/
 !tests/fixtures/*.yml
 !tests/integration/**/*.yaml
 !tests/integration/**/*.yml
+!tests/hardware/**/*.yaml
+!tests/hardware/**/*.yml
 !rbac/*.yaml
 !rbac/*.yml
 !deploy/*.yaml

@@ -58,10 +58,33 @@ poetry run pytest tests/hardware/ -v
 
 ```
 tests/hardware/
-├── conftest.py              # hardware marker + PARALLELIQ_HARDWARE_TESTS gate
-├── test_tier_misplacement.py   # first real scenario — see docstring for setup
-└── test_*.py                # one file per rule/scenario, added as collectors land
+├── conftest.py                          # hardware marker + PARALLELIQ_HARDWARE_TESTS gate
+├── manifests/                           # k8s manifests for each scenario's real deployment
+│   └── tier-misplacement-llama3-8b-t4.yaml   # only one exists — see "Manifest coverage" below
+├── test_tier_misplacement.py            # first real scenario — see docstring for setup
+└── test_*.py                            # one file per rule/scenario, added as collectors land
 ```
+
+## Manifest coverage (2026-08-03) — sample only, not a complete set
+
+`manifests/tier-misplacement-llama3-8b-t4.yaml` is the only manifest that
+exists. It's a sample proving the pattern, not full coverage. Everything else
+from the Bucket A/B scoping still needs either its own manifest or a
+traffic-pattern variant of this one before it can be tested for real:
+
+| Rule | Manifest status |
+|---|---|
+| `tier_misplacement_v1` / `gpu_overprovisioned_v1` (undersized case) | ✅ `tier-misplacement-llama3-8b-t4.yaml` |
+| `gpu_overprovisioned_v1` (oversized case — small model, big GPU) | ❌ needs its own manifest (e.g. Llama-3-8B on an H100) |
+| `idle_trickle_traffic_v1` | ❌ can reuse the existing manifest — no new YAML, just don't send traffic and wait past the 2-hour age threshold |
+| `token_maxing_v1` | ❌ needs the existing manifest plus a long-context, high-concurrency load generator |
+| `low_prefix_cache_hit_rate_v1` | ❌ needs the existing manifest plus a no-shared-prefix traffic script |
+| `low_throughput_v1` | ❌ needs a deliberately bad vLLM config (e.g. `max_num_seqs=1`) — own manifest or variant |
+| `dark_capacity_v1` | ❌ needs a multi-GPU node manifest that only claims a fraction of the GPUs |
+| `fragmentation_v1` | ❌ needs a multi-node manifest set (fragmented free capacity + a pending tensor-parallel job) |
+
+Do not assume any row past the first is covered just because this directory
+and its README exist.
 
 ## Adding a new scenario
 
@@ -69,8 +92,11 @@ tests/hardware/
    `docs/runtime_fact_schema.md` and grep `src/piqc` before writing the test.
    If there's no collector, this is an engineering ticket, not a test to
    write yet.
-2. Write the scenario as a docstring first: what gets deployed, what
+2. Check the table above — does an existing manifest cover this with just a
+   different traffic pattern, or does it need new YAML in `manifests/`?
+3. Write the scenario as a docstring first: what gets deployed, what
    deliberately-bad config triggers the condition, what GPU tier is actually
    needed (most scenarios need the cheapest tier that reproduces the
    condition, not a large one).
-3. Mark the test `@pytest.mark.hardware`.
+4. Mark the test `@pytest.mark.hardware`.
+5. Update the manifest coverage table above.
