@@ -20,6 +20,20 @@ directory does, which is why it's kept separate and off by default.
    actually hits the condition a rule is meant to detect, does piqc report it
    correctly? The only layer that costs real GPU-hours.
 
+Layer 3 itself splits into two levels, both present in this directory:
+
+- **Base telemetry, no rule involved** (`test_gpu_collector_real_hardware.py`) —
+  does `GPUCollector`'s nvidia-smi exec path even work on a real node with
+  real drivers mounted, independent of any inference framework or business
+  rule? If this is broken, every rule-level test below is meaningless
+  regardless of how correct its own logic is. Originally written directly
+  against a live GKE cluster to debug a host-mounted-driver issue
+  (`manifests/gke-real-gpu-workload.yaml`'s own comment); absorbed into this
+  suite from an ad-hoc `k8s/` manifest on 2026-08-03.
+- **Rule-level correctness** (`test_tier_misplacement.py` and future
+  `test_*.py` files) — given a real, deliberately-misconfigured deployment,
+  does a *specific rule* fire correctly end to end?
+
 Layer 3 scales with the size of the rule catalog and the GPU tiers /
 inference frameworks piqc needs to support — not with customer count. That
 distinction is why a rule catalog test suite doesn't turn this into a
@@ -32,8 +46,10 @@ fact for several rule categories at all (serverless efficiency, training
 efficiency, batch efficiency, and OOM-kill detection all confirmed to have no
 collector as of this writing). Those need collector engineering work first;
 no amount of GPU spend here helps them. `test_tier_misplacement.py` is
-included as the first real, runnable example because `model.id` and
-`deployment.gpuType` are confirmed-implemented facts today.
+included as the first real, runnable rule-level example because `model.id`
+and `deployment.gpuType` are confirmed-implemented facts today.
+`test_gpu_collector_real_hardware.py` verifies the layer underneath any rule
+— that nvidia-smi telemetry collection itself works on real hardware.
 
 ## Prerequisites
 
@@ -58,11 +74,13 @@ poetry run pytest tests/hardware/ -v
 
 ```
 tests/hardware/
-├── conftest.py                          # hardware marker + PARALLELIQ_HARDWARE_TESTS gate
-├── manifests/                           # k8s manifests for each scenario's real deployment
-│   └── tier-misplacement-llama3-8b-t4.yaml   # only one exists — see "Manifest coverage" below
-├── test_tier_misplacement.py            # first real scenario — see docstring for setup
-└── test_*.py                            # one file per rule/scenario, added as collectors land
+├── conftest.py                                # hardware marker + PARALLELIQ_HARDWARE_TESTS gate
+├── manifests/                                 # k8s manifests for each scenario's real deployment
+│   ├── gke-real-gpu-workload.yaml             # raw matmul workload — base telemetry check
+│   └── tier-misplacement-llama3-8b-t4.yaml    # real vLLM deployment — rule-level check
+├── test_gpu_collector_real_hardware.py        # base telemetry — no rule/framework involved
+├── test_tier_misplacement.py                  # first rule-level scenario — see docstring for setup
+└── test_*.py                                  # one file per rule/scenario, added as collectors land
 ```
 
 ## Manifest coverage (2026-08-03) — sample only, not a complete set

@@ -1,0 +1,53 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+---
+# Real GPU workload — continuous matmul on the actual L4 node.
+# Validates piqc's real nvidia-smi telemetry path (host-mounted driver fix)
+# alongside the FAKE_GPU mock deployments in inference/staging namespaces.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-matmul-workload
+  namespace: production
+  labels:
+    app: gpu-matmul-workload
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gpu-matmul-workload
+  template:
+    metadata:
+      labels:
+        app: gpu-matmul-workload
+    spec:
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: workload
+          image: pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime
+          command:
+            - python
+            - -c
+            - |
+              import torch, time
+              assert torch.cuda.is_available(), "CUDA not available"
+              a = torch.randn(4096, 4096, device="cuda")
+              b = torch.randn(4096, 4096, device="cuda")
+              while True:
+                  c = a @ b
+                  torch.cuda.synchronize()
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+              nvidia.com/gpu: 1
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+              nvidia.com/gpu: 1
