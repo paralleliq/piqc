@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from piqc.core.orchestrator import FragmentedNodeInfo, PendingGPUPod, UnallocatedNodeInfo
+from piqc.models.coverage import CoverageCheck, CoverageReport
 from piqc.models.modelspec import ModelSpec
 from piqc.utils.logger import get_logger
 
@@ -652,6 +653,65 @@ class TableGenerator:
             "  Free to get started:[/dim] [bold]paralleliq.ai[/bold]"
             "  [dim]  ·  Questions?[/dim] [bold]sam@paralleliq.ai[/bold]\n"
         )
+
+    _COVERAGE_SYMBOL = {
+        "detected": "[green]✓[/green]",
+        "partial": "[yellow]⚠[/yellow]",
+        "absent": "[dim]✗[/dim]",
+    }
+
+    def print_coverage_summary(self, coverage: CoverageReport) -> None:
+        """Print the coverage report: what GPU infra, serving framework, and
+        observability tooling this scan could see in the cluster."""
+        if not coverage.all_checks:
+            return
+
+        self.console.print()
+        self.console.print("[bold]Coverage Report[/bold]")
+        self.console.print(
+            "[dim]What's instrumented today, and what's invisible to any dashboard you have.[/dim]"
+        )
+        self.console.print()
+
+        self._print_coverage_section("GPU Hardware Layer", coverage.gpu_hardware)
+        self._print_coverage_section("Serving Framework Layer", coverage.serving_framework)
+        self._print_coverage_section("Observability Stack", coverage.observability)
+
+        detected = coverage.count_by_status("detected")
+        partial = coverage.count_by_status("partial")
+        absent = coverage.count_by_status("absent")
+
+        lines = [
+            f"  Detected             : [green]{detected}[/green]",
+            f"  Partially wired up   : [yellow]{partial}[/yellow]",
+            f"  Not visible from here: [dim]{absent}[/dim]",
+        ]
+        if partial > 0 or absent > 0:
+            lines.append("")
+            lines.append(
+                "  [dim]Some model-level signals aren't visible without deeper observability wiring.[/dim]"
+            )
+        self.console.print(Panel("\n".join(lines), title="Coverage Summary", expand=False))
+
+        self.console.print(
+            "  [dim]─────────────────────────────────────────────────────────────[/dim]"
+        )
+        self.console.print(
+            "  [bold cyan]→ Want your existing dashboards to show this too?[/bold cyan]\n"
+            "  [dim]Paralleliq can wire vLLM into your existing Prometheus — a small,\n"
+            "  reviewable change (one ServiceMonitor), not a new system to run.\n"
+            "  Free to get started:[/dim] [bold]paralleliq.ai[/bold]"
+            "  [dim]  ·  Questions?[/dim] [bold]sam@paralleliq.ai[/bold]\n"
+        )
+
+    def _print_coverage_section(self, title: str, checks: list[CoverageCheck]) -> None:
+        if not checks:
+            return
+        self.console.print(f"  [bold]{title}[/bold]")
+        for check in checks:
+            symbol = self._COVERAGE_SYMBOL.get(check.status, "?")
+            self.console.print(f"  {symbol} {check.name:<28s} [dim]{check.detail}[/dim]")
+        self.console.print()
 
     def _format_gpu_info(self, spec: ModelSpec) -> str:
         """Format GPU information for display."""

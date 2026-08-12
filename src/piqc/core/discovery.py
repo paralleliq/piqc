@@ -128,24 +128,62 @@ GPU_RESOURCE_KEYS = {
 # =============================================================================
 # Known GPU infrastructure pods to exclude (not inference workloads)
 # =============================================================================
+#
+# Grouped by category rather than one flat list — classify_infra_pod() needs
+# to say *which* piece of infrastructure a pod belongs to (for the coverage
+# report), not just that it's infrastructure at all (which is all
+# _is_gpu_infra_pod's exclusion check ever needed).
 
-# Image substrings that identify GPU system/monitoring daemons, not inference
-INFRA_IMAGE_PATTERNS = [
-    re.compile(r"dcgm.exporter", re.IGNORECASE),
-    re.compile(r"nvidia.device.plugin", re.IGNORECASE),
-    re.compile(r"nvidia-device-plugin", re.IGNORECASE),
-    re.compile(r"gpu-feature-discovery", re.IGNORECASE),
-    re.compile(r"node-feature-discovery", re.IGNORECASE),
-    re.compile(r"k8s-device-plugin", re.IGNORECASE),
-]
+INFRA_POD_CATEGORIES: dict[str, tuple[list[re.Pattern], list[re.Pattern]]] = {
+    # category -> (name-prefix patterns, image-substring patterns)
+    "dcgm_exporter": (
+        [re.compile(r"^dcgm-exporter", re.IGNORECASE)],
+        [re.compile(r"dcgm.exporter", re.IGNORECASE)],
+    ),
+    "nvidia_device_plugin": (
+        [re.compile(r"^nvidia-gpu-device-plugin", re.IGNORECASE)],
+        [
+            re.compile(r"nvidia.device.plugin", re.IGNORECASE),
+            re.compile(r"nvidia-device-plugin", re.IGNORECASE),
+            re.compile(r"k8s-device-plugin", re.IGNORECASE),
+        ],
+    ),
+    "gpu_feature_discovery": (
+        [re.compile(r"^gpu-feature-discovery", re.IGNORECASE)],
+        [re.compile(r"gpu-feature-discovery", re.IGNORECASE)],
+    ),
+    "node_feature_discovery": (
+        [re.compile(r"^node-feature-discovery", re.IGNORECASE)],
+        [re.compile(r"node-feature-discovery", re.IGNORECASE)],
+    ),
+}
 
-# Pod name prefixes that identify well-known GPU infrastructure DaemonSets
-INFRA_NAME_PATTERNS = [
-    re.compile(r"^dcgm-exporter", re.IGNORECASE),
-    re.compile(r"^nvidia-gpu-device-plugin", re.IGNORECASE),
-    re.compile(r"^gpu-feature-discovery", re.IGNORECASE),
-    re.compile(r"^node-feature-discovery", re.IGNORECASE),
-]
+# Flattened views, kept for any external code still importing the old names.
+INFRA_IMAGE_PATTERNS = [p for _, imgs in INFRA_POD_CATEGORIES.values() for p in imgs]
+INFRA_NAME_PATTERNS = [p for names, _ in INFRA_POD_CATEGORIES.values() for p in names]
+
+
+def classify_infra_pod(pod: V1Pod) -> Optional[str]:
+    """Return the infra category this pod belongs to (e.g. "dcgm_exporter"),
+    or None if it isn't a known GPU infrastructure pod.
+
+    Module-level so it can be used for coverage reporting independent of
+    FrameworkDetector's own internal exclusion check.
+    """
+    pod_name = (pod.metadata.name or "") if pod.metadata else ""
+    containers: list[V1Container] = []
+    if pod.spec:
+        containers = list(pod.spec.containers or []) + list(pod.spec.init_containers or [])
+
+    for category, (name_patterns, image_patterns) in INFRA_POD_CATEGORIES.items():
+        for pattern in name_patterns:
+            if pattern.search(pod_name):
+                return category
+        for container in containers:
+            for pattern in image_patterns:
+                if pattern.search(container.image or ""):
+                    return category
+    return None
 
 
 class FrameworkDetector:
@@ -268,15 +306,7 @@ class FrameworkDetector:
 
     def _is_gpu_infra_pod(self, pod: V1Pod) -> bool:
         """Return True if this pod is a GPU infrastructure daemon, not an inference workload."""
-        pod_name = (pod.metadata.name or "") if pod.metadata else ""
-        for pattern in INFRA_NAME_PATTERNS:
-            if pattern.search(pod_name):
-                return True
-        for container in self._get_all_containers(pod):
-            for pattern in INFRA_IMAGE_PATTERNS:
-                if pattern.search(container.image or ""):
-                    return True
-        return False
+        return classify_infra_pod(pod) is not None
 
     def _is_ml_workload(self, pod: V1Pod) -> bool:
         """Check if the pod is likely an ML workload."""

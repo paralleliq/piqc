@@ -191,6 +191,13 @@ poetry run piqc scan --format table
 - **MFU (Model FLOPS Utilization)** — Observed compute vs. theoretical GPU peak per deployment
 - **Cost per 1K tokens** — GPU spend translated into a business metric comparable to API pricing
 
+### 🔭 Coverage Report (`--coverage`)
+- **GPU Hardware Layer** — DCGM exporter, NVIDIA device plugin, GPU/node feature discovery: what's actually instrumented vs. what isn't
+- **Serving Framework Layer** — vLLM detection confidence, and GPU-claiming pods that don't match a known serving signature
+- **Observability Stack** — Prometheus Operator presence, whether vLLM is actually being scraped, OpenTelemetry Collector presence
+- Three-state reporting (detected / partially wired up / not visible from here) — never a hard pass/fail, since "not visible" can mean genuinely absent or just outside piqc's current RBAC scope
+- Read-only, same as the rest of piqc — a few extra Kubernetes API discovery calls, no new write permissions
+
 ### 📄 Multiple Output Formats
 | Format | Description |
 |--------|-------------|
@@ -288,6 +295,7 @@ piqc scan [OPTIONS]
 | `--no-logs` | `false` | Disable log reading |
 | `--aggregate/--no-aggregate` | `aggregate` | Aggregate metrics across pod replicas |
 | `--contribute-benchmarks` | `false` | Contribute anonymized GPU/model performance data to the Paralleliq benchmark dataset |
+| `--coverage` | `false` | Also report what GPU infra, serving framework, and observability tooling this scan could see in your cluster (table output only) |
 
 #### Output Options
 
@@ -320,6 +328,9 @@ piqc scan --no-exec
 
 # Collect runtime metrics from vLLM API
 piqc scan --collect-runtime
+
+# Also report GPU infra / serving framework / observability coverage
+piqc scan --format table --coverage
 
 # Generate PIQC facts bundle for control plane integration
 piqc scan --output-piqc -o ./facts
@@ -524,7 +535,9 @@ kubectl apply -f https://raw.githubusercontent.com/paralleliq/piqc/main/deploy/r
 | `namespaces` | get, list | Scan multiple namespaces |
 | `deployments` | get, list | Identify deployment metadata |
 | `statefulsets` | get, list | Identify StatefulSet workloads |
-| `services` | get, list | Endpoint detection |
+| `services` | get, list | Endpoint detection, OTel Collector detection (`--coverage`) |
+| `nodes` | get, list | GPU capacity / dark capacity analysis |
+| `servicemonitors.monitoring.coreos.com` | get, list | Optional — only used by `--coverage` to check vLLM scrape coverage. Harmless to grant even without Prometheus Operator installed. |
 
 ---
 

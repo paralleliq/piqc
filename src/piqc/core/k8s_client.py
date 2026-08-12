@@ -11,13 +11,16 @@ from typing import Any, Callable, Optional
 
 from kubernetes import client, config
 from kubernetes.client import (
+    ApisApi,
     CoreV1Api,
     AppsV1Api,
+    CustomObjectsApi,
     V1Deployment,
     V1StatefulSet,
     V1Node,
     V1Pod,
     V1PodList,
+    V1Service,
 )
 from kubernetes.client.exceptions import ApiException
 from kubernetes.stream import stream
@@ -88,6 +91,8 @@ class K8sClient:
         # Initialize API clients
         self.core_api = CoreV1Api()
         self.apps_api = AppsV1Api()
+        self.apis_api = ApisApi()
+        self.custom_objects_api = CustomObjectsApi()
         
         logger.debug(f"Kubernetes client initialized for context: {self.context}")
     
@@ -588,6 +593,79 @@ class K8sClient:
                     verb="list",
                 )
             logger.warning(f"Failed to list nodes: {e.reason}")
+            return []
+
+    def has_api_group(self, group: str) -> bool:
+        """
+        Check whether an API group is registered on the server.
+
+        Used for coverage discovery — e.g. "monitoring.coreos.com" existing
+        is the signal that Prometheus Operator is installed. This is a
+        discovery-doc read, not a resource read: it doesn't need any RBAC
+        beyond what every client already has to talk to the API server at
+        all, so failures here are logged and treated as "unknown," never
+        raised.
+
+        Args:
+            group: API group name, e.g. "monitoring.coreos.com".
+
+        Returns:
+            True if the group is present in the server's API discovery doc.
+        """
+        try:
+            groups = self.apis_api.get_api_versions(_request_timeout=self.timeout)
+            return any(g.name == group for g in (groups.groups or []))
+        except Exception as e:
+            logger.debug(f"Failed to check for API group '{group}': {e}")
+            return False
+
+    def list_service_monitors(self) -> list[dict[str, Any]]:
+        """
+        List Prometheus Operator ServiceMonitor objects across all namespaces.
+
+        Read-only, best-effort: ServiceMonitor is a CRD, not a core resource,
+        so a cluster without Prometheus Operator installed (or without RBAC
+        to list it) simply returns an empty list rather than raising —
+        coverage discovery treats "couldn't check" the same as "found none"
+        for this optional signal.
+
+        Returns:
+            List of raw ServiceMonitor objects (as dicts — CRDs have no
+            typed client model).
+        """
+        try:
+            result = self.custom_objects_api.list_custom_object_for_all_namespaces(
+                group="monitoring.coreos.com",
+                version="v1",
+                plural="servicemonitors",
+                _request_timeout=self.timeout,
+            )
+            items = result.get("items", [])
+            logger.debug(f"Found {len(items)} ServiceMonitor(s)")
+            return items
+        except Exception as e:
+            logger.debug(f"Failed to list ServiceMonitors: {e}")
+            return []
+
+    def list_all_services(self) -> list[V1Service]:
+        """
+        List services across all namespaces.
+
+        Used for coverage discovery — e.g. spotting a well-known Prometheus
+        or OTel Collector service by name/port convention.
+
+        Returns:
+            List of V1Service objects, or an empty list if the call fails.
+        """
+        def _list() -> Any:
+            return self.core_api.list_service_for_all_namespaces(_request_timeout=self.timeout)
+
+        try:
+            result = self._retry_operation(_list, "list_all_services")
+            logger.debug(f"Found {len(result.items)} service(s)")
+            return result.items
+        except Exception as e:
+            logger.debug(f"Failed to list services: {e}")
             return []
 
     def get_connection_info(self) -> dict[str, str]:

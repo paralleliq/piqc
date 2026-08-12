@@ -22,8 +22,10 @@ from piqc.collectors.vllm_api_client import (
     discover_vllm_service,
 )
 from piqc.collectors.vllm_collector import VLLMCollector
-from piqc.core.discovery import DeploymentDiscovery
+from piqc.core.coverage import CoverageAnalyzer
+from piqc.core.discovery import DeploymentDiscovery, classify_infra_pod
 from piqc.core.k8s_client import K8sClient
+from piqc.models.coverage import CoverageReport
 from piqc.models.modelspec import (
     CollectionMetadata,
     CPUInfo,
@@ -107,6 +109,8 @@ class ScanResult:
         self.unallocated_nodes: list[UnallocatedNodeInfo] = []
         self.fragmented_nodes: list[FragmentedNodeInfo] = []
         self.pending_gpu_pods: list[PendingGPUPod] = []
+        self.infra_pod_counts: dict[str, int] = {}
+        self.coverage: Optional[CoverageReport] = None
     
     def add_warning(self, message: str) -> None:
         """Add a warning message."""
@@ -133,17 +137,22 @@ class ScanOrchestrator:
         enable_exec: bool = True,
         enable_logs: bool = True,
         enable_runtime_collection: bool = False,
+        enable_coverage: bool = False,
         workers: int = 5,
         timeout: int = 30,
     ) -> None:
         """
         Initialize the orchestrator.
-        
+
         Args:
             k8s_client: Kubernetes client instance.
             enable_exec: Whether to enable pod exec for GPU metrics.
             enable_logs: Whether to enable log reading.
             enable_runtime_collection: Whether to collect runtime metrics via vLLM API.
+            enable_coverage: Whether to also produce a coverage report — what
+                GPU infra, serving framework, and observability tooling piqc
+                could see during this scan. A few extra read-only cluster
+                checks beyond the normal scan; off by default.
             workers: Number of parallel workers for scanning.
             timeout: Timeout for individual operations.
         """
@@ -151,11 +160,13 @@ class ScanOrchestrator:
         self.enable_exec = enable_exec
         self.enable_logs = enable_logs
         self.enable_runtime_collection = enable_runtime_collection
+        self.enable_coverage = enable_coverage
         self.workers = workers
         self.timeout = timeout
-        
+
         # Initialize components
         self.discovery = DeploymentDiscovery()
+        self.coverage_analyzer = CoverageAnalyzer(k8s_client)
         self.config_collector = ConfigCollector()
         self.vllm_collector = VLLMCollector()
         self.gpu_collector = GPUCollector(k8s_client, exec_timeout=timeout)
@@ -234,6 +245,21 @@ class ScanOrchestrator:
         except Exception as e:
             result.add_warning(f"Pending GPU pod analysis failed: {e}")
 
+        # Coverage report — what GPU infra, serving framework, and
+        # observability tooling piqc could see. Opt-in: a few extra
+        # read-only cluster checks (API group discovery, ServiceMonitor
+        # list, service list) beyond what a normal scan needs.
+        if self.enable_coverage:
+            try:
+                total_nodes = len(self.k8s_client.list_nodes())
+                result.coverage = self.coverage_analyzer.analyze(
+                    infra_pod_counts=result.infra_pod_counts,
+                    modelspecs=result.modelspecs,
+                    total_nodes=total_nodes,
+                )
+            except Exception as e:
+                result.add_warning(f"Coverage analysis failed: {e}")
+
         result.duration_seconds = time.time() - start_time
         
         return result
@@ -254,15 +280,27 @@ class ScanOrchestrator:
         
         running_pods = self.discovery.filter_running_pods(pods)
         result.pods_analyzed += len(running_pods)
-        
+
         # Analyze each pod
         deployments: list[InferenceDeployment] = []
-        
+
         for pod in running_pods:
+            if self.enable_coverage:
+                # GPU infra pods (dcgm-exporter, device plugins, ...) never
+                # produce a deployment below — analyze_pod excludes them the
+                # same as any other non-inference pod. This is the only place
+                # that information exists at all, so it has to be captured
+                # here or it's gone.
+                category = classify_infra_pod(pod)
+                if category:
+                    result.infra_pod_counts[category] = (
+                        result.infra_pod_counts.get(category, 0) + 1
+                    )
+
             deployment = self.discovery.analyze_pod(pod)
             if deployment:
                 deployments.append(deployment)
-        
+
         return deployments
     
     def _process_sequential(

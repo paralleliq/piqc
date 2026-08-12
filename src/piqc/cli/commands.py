@@ -169,6 +169,12 @@ def main() -> None:
     help="Disable log reading",
 )
 @click.option(
+    "--coverage",
+    is_flag=True,
+    default=False,
+    help="Also report what GPU infra, serving framework, and observability tooling this scan could see in your cluster.",
+)
+@click.option(
     "--workers",
     type=int,
     default=10,
@@ -258,6 +264,7 @@ def scan(
     timeout: int,
     no_exec: bool,
     no_logs: bool,
+    coverage: bool,
     workers: int,
     verbose: bool,
     debug: bool,
@@ -297,6 +304,10 @@ def scan(
         
         # Skip GPU metrics (faster)
         piqc scan --no-exec
+
+        # Also report what GPU infra, serving framework, and observability
+        # tooling this scan could see in your cluster
+        piqc scan --coverage
 
         # Push facts to the ParallelIQ platform (closed-loop demo)
         piqc scan --push-url http://localhost:8000
@@ -348,6 +359,7 @@ def scan(
         enable_exec=not no_exec,
         enable_logs=not no_logs,
         enable_runtime_collection=collect_runtime,
+        enable_coverage=coverage,
         workers=workers,
         timeout=timeout,
     )
@@ -469,7 +481,16 @@ def scan(
     else:
         print_info("No inference deployments found.")
         console.print()
-    
+
+    # Coverage report — independent of whether any inference deployments
+    # were found; a cluster's GPU infra/observability coverage is worth
+    # reporting even when piqc found nothing running vLLM.
+    if result.coverage and output_format == "table":
+        print_info("Checking observability coverage...")
+        console.print()
+        table_gen = TableGenerator(console)
+        table_gen.print_coverage_summary(result.coverage)
+
     # Contribute anonymized benchmarks if requested
     if contribute_benchmarks and result.modelspecs:
         from piqc import __version__

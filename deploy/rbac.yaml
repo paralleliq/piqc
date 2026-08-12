@@ -45,6 +45,13 @@ rules:
   - apiGroups: ["apps"]
     resources: ["replicasets"]
     verbs: ["get", "list"]
+  # Optional: only used by `piqc scan --coverage` to check whether a
+  # ServiceMonitor targets vLLM's own /metrics port. Harmless to grant even
+  # on clusters without Prometheus Operator installed — the CRD not existing
+  # just means this rule never matches anything.
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
