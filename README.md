@@ -1,7 +1,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/PIQC-v1.0.0-blue?style=for-the-badge&logo=kubernetes&logoColor=white" alt="PIQC Version"/>
   <img src="https://img.shields.io/badge/Python-3.11+-green?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>
-  <img src="https://img.shields.io/badge/License-Apache%202.0-orange?style=for-the-badge" alt="License"/>
+  <img src="https://img.shields.io/badge/License-BSL%201.1-orange?style=for-the-badge" alt="License"/>
   <img src="https://img.shields.io/badge/vLLM-Supported-purple?style=for-the-badge" alt="vLLM"/>
   <img src="https://img.shields.io/badge/Ray%20Serve-Supported-blue?style=for-the-badge" alt="Ray Serve"/>
   <img src="https://img.shields.io/github/stars/paralleliq/piqc?style=for-the-badge&logo=github&color=yellow" alt="GitHub Stars"/>
