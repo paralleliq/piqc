@@ -93,6 +93,17 @@ class K8sClient:
         self.apps_api = AppsV1Api()
         self.apis_api = ApisApi()
         self.custom_objects_api = CustomObjectsApi()
+
+        # Separate client for pod exec: kubernetes.stream.stream() upgrades a
+        # pooled connection to a raw websocket for the exec session, and the
+        # socket goes back into the pool afterward as if it were a normal
+        # keep-alive HTTP connection. If exec shares core_api's connection
+        # pool, the next plain REST call on that pool (e.g. list_nodes) can
+        # check out the ex-websocket connection and fail to parse its
+        # response as a handshake error, even though the server responded
+        # correctly. Giving exec its own CoreV1Api/ApiClient/pool avoids the
+        # cross-contamination.
+        self.exec_api = CoreV1Api()
         
         logger.debug(f"Kubernetes client initialized for context: {self.context}")
     
@@ -435,7 +446,7 @@ class K8sClient:
         
         try:
             resp = stream(
-                self.core_api.connect_get_namespaced_pod_exec,
+                self.exec_api.connect_get_namespaced_pod_exec,
                 pod_name,
                 namespace,
                 command=command,
