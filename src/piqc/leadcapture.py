@@ -23,11 +23,8 @@ from piqc.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# TODO(sam): placeholder — swap for a Web3Forms access key dedicated to this
-# form (dashboard > create form > destination info@paralleliq.ai) before
-# relying on this in production. Until replaced, submissions will send to
-# whatever the contact-form key is currently configured to deliver to.
-_WEB3FORMS_ACCESS_KEY = "169d21e8-3750-4079-97ae-8de5198250d6"
+# Dedicated Web3Forms form ("piqc scan leads"), routed to info@paralleliq.ai.
+_WEB3FORMS_ACCESS_KEY = "7f5df0a2-ca71-4a79-9920-9554ab0f5643"
 
 _WEB3FORMS_ENDPOINT = "https://api.web3forms.com/submit"
 _TIMEOUT_SECONDS = 5
