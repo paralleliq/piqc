@@ -297,6 +297,8 @@ piqc scan [OPTIONS]
 | `--contribute-benchmarks` | `false` | Contribute anonymized GPU/model performance data to the Paralleliq benchmark dataset |
 | `--coverage` | `false` | Also report what GPU infra, serving framework, and observability tooling this scan could see in your cluster (table output only) |
 
+When a scan run at an interactive terminal (table output, results found) finishes, piqc asks a one-time, skippable question: whether to send your name/company/email plus a compact scan summary to Paralleliq for a follow-up. Declining is a clean exit — nothing is sent. Scripted, piped, or `--format json`/`yaml` invocations never show this prompt.
+
 #### Output Options
 
 | Option | Default | Description |

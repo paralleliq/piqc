@@ -111,6 +111,7 @@ class ScanResult:
         self.pending_gpu_pods: list[PendingGPUPod] = []
         self.infra_pod_counts: dict[str, int] = {}
         self.coverage: Optional[CoverageReport] = None
+        self.cloud_provider: Optional[str] = None
     
     def add_warning(self, message: str) -> None:
         """Add a warning message."""
@@ -121,6 +122,28 @@ class ScanResult:
         """Add an error message."""
         self.errors.append(message)
         logger.error(message)
+
+
+def detect_cloud_provider(nodes: list) -> Optional[str]:
+    """Infer the cloud provider from node spec.providerID, the standard
+    Kubernetes field cloud controller managers stamp on every node
+    (aws:///..., gce://..., azure:///...). Absent or unrecognized means
+    on-prem/bare-metal or a provider that doesn't set it (e.g. some
+    self-managed GPU clouds) — reported as "on-prem / other" rather than
+    guessed at, since a wrong guess is worse than an honest unknown."""
+    for node in nodes:
+        provider_id = getattr(node.spec, "provider_id", None) if node.spec else None
+        if not provider_id:
+            continue
+        prefix = provider_id.split(":", 1)[0].lower()
+        if prefix == "aws":
+            return "aws"
+        if prefix in ("gce", "gcp"):
+            return "gcp"
+        if prefix == "azure":
+            return "azure"
+        return prefix  # some other cloud controller — report its own prefix as-is
+    return "on-prem / other"
 
 
 class ScanOrchestrator:
@@ -260,8 +283,14 @@ class ScanOrchestrator:
             except Exception as e:
                 result.add_warning(f"Coverage analysis failed: {e}")
 
+        # Cloud provider, inferred from node.spec.providerID
+        try:
+            result.cloud_provider = detect_cloud_provider(self.k8s_client.list_nodes())
+        except Exception as e:
+            result.add_warning(f"Cloud provider detection failed: {e}")
+
         result.duration_seconds = time.time() - start_time
-        
+
         return result
     
     def _scan_namespace(

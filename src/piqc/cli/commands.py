@@ -509,7 +509,14 @@ def scan(
 
     # Print timing
     print_info(f"Scan completed in {format_duration(result.duration_seconds)}")
-    
+
+    # Optional, skippable post-scan lead capture — only for a real
+    # interactive terminal session with table output and results worth
+    # following up on; never fires for scripted/CI invocations.
+    from piqc.leadcapture import prompt_and_submit, should_prompt
+    if should_prompt(result, output_format):
+        prompt_and_submit(result, console, __version__)
+
     # Exit with appropriate code
     if result.errors:
         sys.exit(1)
