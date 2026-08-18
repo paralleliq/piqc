@@ -493,7 +493,6 @@ def scan(
 
     # Contribute anonymized benchmarks if requested
     if contribute_benchmarks and result.modelspecs:
-        from piqc import __version__
         from piqc.telemetry import contribute
         sent, records = contribute(result.modelspecs, __version__)
         if sent > 0:
