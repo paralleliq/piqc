@@ -678,76 +678,23 @@ class TestParallelismStrategy:
             assert "deployment.parallelismStrategy" not in facts
 
 
-class TestClusterFragmentationWorkload:
-    """Tests for the cluster-scoped WorkloadObject fragmentation_v1 needs --
-    aggregated from data _analyze_node_capacity()/_analyze_fragmented_nodes()
-    already compute for the CLI's own table report, wired into this bundle
-    for the first time."""
-
-    def test_no_data_emits_no_cluster_workload(self) -> None:
-        generator = PIQCGenerator()
-        modelspec = create_test_modelspec()
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output_file = generator.generate([modelspec], tmpdir)
-            with open(output_file) as f:
-                data = json.load(f)
-
-            assert not any(o["workloadId"].endswith("/cluster/fleet-wide") for o in data["objects"])
-
-    def test_totals_and_largest_block_and_fragmented_count(self) -> None:
-        generator = PIQCGenerator()
-        modelspec = create_test_modelspec()
-        unallocated = [
-            UnallocatedNodeInfo(node_name="node-a", gpu_type="H100", total_gpus=8, allocated_gpus=7, unallocated_gpus=1),
-            UnallocatedNodeInfo(node_name="node-b", gpu_type="H100", total_gpus=8, allocated_gpus=3, unallocated_gpus=5),
-        ]
-        fragmented = [
-            FragmentedNodeInfo(node_name="node-a", gpu_type="H100", total_gpus=8, allocated_gpus=7, stranded_gpus=1, min_model_gpus_needed=2),
-        ]
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output_file = generator.generate(
-                [modelspec],
-                tmpdir,
-                unallocated_nodes=unallocated,
-                fragmented_nodes=fragmented,
-            )
-            with open(output_file) as f:
-                data = json.load(f)
-
-            cluster_obj = next(o for o in data["objects"] if o["workloadId"] == "ns/gpu-pool/cluster/fleet-wide")
-            facts = cluster_obj["facts"]
-            assert facts["cluster.totalFreeGpus"]["value"] == 6
-            assert facts["cluster.largestContiguousBlock"]["value"] == 5
-            assert facts["cluster.fragmentedNodeCount"]["value"] == 1
-
-    def test_fragmented_only_no_unallocated_still_emits(self) -> None:
-        """Every fragmented node is also unallocated by definition
-        (_analyze_fragmentation only runs against the unallocated list) --
-        this guards the case where only fragmented_nodes is non-empty at the
-        call site regardless."""
-        generator = PIQCGenerator()
-        modelspec = create_test_modelspec()
-        fragmented = [
-            FragmentedNodeInfo(node_name="node-a", gpu_type="L4", total_gpus=4, allocated_gpus=3, stranded_gpus=1, min_model_gpus_needed=2),
-        ]
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output_file = generator.generate(
-                [modelspec], tmpdir, unallocated_nodes=[], fragmented_nodes=fragmented
-            )
-            with open(output_file) as f:
-                data = json.load(f)
-
-            cluster_obj = next(o for o in data["objects"] if o["workloadId"] == "ns/gpu-pool/cluster/fleet-wide")
-            assert cluster_obj["facts"]["cluster.fragmentedNodeCount"]["value"] == 1
-            assert cluster_obj["facts"]["cluster.totalFreeGpus"]["value"] == 0
-
-
 class TestPendingPodWorkload:
-    """Tests for the pod-scoped WorkloadObject fragmentation_v1's demand
-    side needs, from _analyze_pending_gpu_pods()."""
+    """Tests for the pod-scoped WorkloadObject fragmentation_v1 needs, from
+    _analyze_pending_gpu_pods()/_analyze_node_capacity()/
+    _analyze_fragmented_nodes() -- all already computed today for the CLI's
+    own table report, wired into this bundle for the first time.
+
+    Cluster-wide fragmentation facts are folded directly onto the same
+    pod-scoped object as the pod's own demand facts, not emitted as a
+    separate cluster-scoped object -- fragmentation_v1's `when` clause
+    evaluates one workload's fact store at a time (_evaluate_from_rules
+    takes a single flat scan.facts dict), so a standalone object's facts
+    would never be visible to the same evaluation as a pending job's facts.
+    An earlier version of this fix emitted them separately and, despite
+    every fact being technically present in the bundle, the rule never
+    fired against a real /v1/ingest payload -- see test_rule_actually_fires
+    below, which guards against that regression directly.
+    """
 
     def test_pending_pod_facts_emitted(self) -> None:
         generator = PIQCGenerator()
@@ -794,3 +741,110 @@ class TestPendingPodWorkload:
             pod_obj = next(o for o in data["objects"] if o["workloadId"] == "ns/training/pod/batch-job")
             assert "deployment.parallelismStrategy" not in pod_obj["facts"]
             assert "deployment.gpuType" not in pod_obj["facts"]
+
+    def test_no_pending_pods_emits_no_pod_objects(self) -> None:
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec()
+        unallocated = [
+            UnallocatedNodeInfo(node_name="node-a", gpu_type="H100", total_gpus=8, allocated_gpus=7, unallocated_gpus=1),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir, unallocated_nodes=unallocated)
+            with open(output_file) as f:
+                data = json.load(f)
+
+            assert not any(o["kind"] == "Pod" for o in data["objects"])
+
+    def test_cluster_facts_folded_onto_the_pending_pod_object(self) -> None:
+        """The core fix: totals/largest-block/fragmented-count -- computed
+        cluster-wide, not per-pod -- must land on the SAME object as the
+        pod's own job.pendingGpuCount, since that's the only object
+        fragmentation_v1 will ever evaluate them together on."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec()
+        unallocated = [
+            UnallocatedNodeInfo(node_name="node-a", gpu_type="H100", total_gpus=8, allocated_gpus=7, unallocated_gpus=1),
+            UnallocatedNodeInfo(node_name="node-b", gpu_type="H100", total_gpus=8, allocated_gpus=3, unallocated_gpus=5),
+        ]
+        fragmented = [
+            FragmentedNodeInfo(node_name="node-a", gpu_type="H100", total_gpus=8, allocated_gpus=7, stranded_gpus=1, min_model_gpus_needed=2),
+        ]
+        pending = [
+            PendingGPUPod(pod_name="vllm-70b", namespace="inference", gpus_needed=4, pending_minutes=42.5, parallelism_strategy="tensor"),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate(
+                [modelspec],
+                tmpdir,
+                unallocated_nodes=unallocated,
+                fragmented_nodes=fragmented,
+                pending_gpu_pods=pending,
+            )
+            with open(output_file) as f:
+                data = json.load(f)
+
+            pod_obj = next(o for o in data["objects"] if o["workloadId"] == "ns/inference/pod/vllm-70b")
+            facts = pod_obj["facts"]
+            assert facts["job.pendingGpuCount"]["value"] == 4
+            assert facts["cluster.totalFreeGpus"]["value"] == 6
+            assert facts["cluster.largestContiguousBlock"]["value"] == 5
+            assert facts["cluster.fragmentedNodeCount"]["value"] == 1
+            # No separate cluster-scoped object -- everything lives on the pod.
+            assert not any(o["workloadId"].endswith("/cluster/fleet-wide") for o in data["objects"])
+
+    def test_rule_actually_fires(self) -> None:
+        """End-to-end regression guard: run the real fragmentation_v1 rule
+        (not just check which facts got emitted) against a bundle shaped
+        exactly like what generate() produces, using the same evaluator
+        platform's /v1/ingest calls. Written after an earlier version of
+        this fix passed every fact-presence test above yet never actually
+        fired the rule, because the facts were split across two objects.
+        """
+        import sys
+        from pathlib import Path
+
+        platform_root = Path(__file__).resolve().parents[3] / "platform"
+        if not platform_root.is_dir():
+            pytest.skip("platform repo not checked out alongside piqc")
+        sys.path.insert(0, str(platform_root / "services" / "control-plane"))
+        from src.advisor_integration import evaluate_fragmentation  # type: ignore[import-not-found]
+
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec()
+        # Enough total free GPUs across the cluster (6) to satisfy the
+        # pending job's request (4), but split across nodes such that no
+        # single node has more than 2 free -- genuinely fragmented, not
+        # simply short on capacity (the rule's `ge total >= needed` /
+        # `lt largest_block < needed` pair both need to hold: 6 >= 4, and
+        # 2 < 4).
+        unallocated = [
+            UnallocatedNodeInfo(node_name="node-a", gpu_type="H100", total_gpus=8, allocated_gpus=6, unallocated_gpus=2),
+            UnallocatedNodeInfo(node_name="node-b", gpu_type="H100", total_gpus=8, allocated_gpus=6, unallocated_gpus=2),
+            UnallocatedNodeInfo(node_name="node-c", gpu_type="H100", total_gpus=8, allocated_gpus=6, unallocated_gpus=2),
+        ]
+        fragmented = [
+            FragmentedNodeInfo(node_name="node-a", gpu_type="H100", total_gpus=8, allocated_gpus=6, stranded_gpus=2, min_model_gpus_needed=4),
+        ]
+        pending = [
+            PendingGPUPod(pod_name="vllm-70b", namespace="inference", gpus_needed=4, pending_minutes=42.5, parallelism_strategy="tensor"),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate(
+                [modelspec],
+                tmpdir,
+                unallocated_nodes=unallocated,
+                fragmented_nodes=fragmented,
+                pending_gpu_pods=pending,
+            )
+            with open(output_file) as f:
+                bundle = json.load(f)
+
+        pod_obj = next(o for o in bundle["objects"] if o["workloadId"] == "ns/inference/pod/vllm-70b")
+        scan = {"facts": {k: {"value": v["value"]} for k, v in pod_obj["facts"].items()}}
+        result = evaluate_fragmentation(scan)
+
+        issue_codes = [i["issueCode"] for i in result["issues"]]
+        assert "fragmentation_v1" in issue_codes

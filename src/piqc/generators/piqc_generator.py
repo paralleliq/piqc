@@ -76,14 +76,18 @@ class PIQCGenerator:
                 known model (from Orchestrator._analyze_fragmented_nodes).
                 Already computed for the CLI's own table report
                 (table_generator.py) but never reached this bundle before --
-                aggregated into one cluster-scoped WorkloadObject alongside
-                unallocated_nodes, since fragmentation_v1 needs cluster-wide
-                totals, not a per-node breakdown.
+                folded into each pending pod's own WorkloadObject alongside
+                unallocated_nodes (see _build_pending_pod_workload), not
+                emitted as a separate object: fragmentation_v1's `when`
+                clause evaluates one workload's fact store at a time, so a
+                standalone cluster-scoped object's facts would never be
+                visible to the same evaluation as a pending job's facts.
             pending_gpu_pods: Pods stuck Pending because no node can satisfy
                 their GPU request (from Orchestrator._analyze_pending_gpu_pods).
                 Same "computed for the CLI report, never wired here" gap as
                 fragmented_nodes -- each becomes its own pod-scoped
-                WorkloadObject.
+                WorkloadObject, carrying both its own demand facts and the
+                cluster-wide fragmentation facts above.
 
         Returns:
             Path to generated file.
@@ -94,13 +98,9 @@ class PIQCGenerator:
         # Build workload objects
         objects = [self._build_workload(spec) for spec in modelspecs]
         objects.extend(self._build_node_workload(node) for node in (unallocated_nodes or []))
-        cluster_workload = self._build_cluster_fragmentation_workload(
-            unallocated_nodes or [], fragmented_nodes or []
-        )
-        if cluster_workload is not None:
-            objects.append(cluster_workload)
         objects.extend(
-            self._build_pending_pod_workload(pod) for pod in (pending_gpu_pods or [])
+            self._build_pending_pod_workload(pod, unallocated_nodes or [], fragmented_nodes or [])
+            for pod in (pending_gpu_pods or [])
         )
 
         # Build bundle
@@ -179,15 +179,25 @@ class PIQCGenerator:
             facts=facts,
         )
 
-    def _build_cluster_fragmentation_workload(
+    def _cluster_fragmentation_facts(
         self,
         unallocated_nodes: list[UnallocatedNodeInfo],
         fragmented_nodes: list[FragmentedNodeInfo],
-    ) -> Optional[WorkloadObject]:
-        """Build the single cluster-scoped WorkloadObject fragmentation_v1
-        needs, from data _analyze_node_capacity()/_analyze_fragmented_nodes()
-        already compute today for the CLI's own table report -- this was
-        never emitted into the facts bundle before.
+    ) -> dict[str, FactValue]:
+        """Cluster-wide fragmentation facts fragmentation_v1 needs, from data
+        _analyze_node_capacity()/_analyze_fragmented_nodes() already compute
+        today for the CLI's own table report -- this was never emitted into
+        the facts bundle before.
+
+        Folded directly into each pending pod's own WorkloadObject (see
+        _build_pending_pod_workload) rather than emitted as its own
+        cluster-scoped object: fragmentation_v1's `when` clause evaluates one
+        workload's fact store at a time (_evaluate_from_rules in
+        advisor_integration.py takes a single flat `scan.facts` dict, not a
+        join across objects), so a standalone object's facts would never be
+        visible to the same evaluation as a pending job's demand facts --
+        confirmed by testing a real /v1/ingest payload with the two split
+        across separate objects: the rule never fired.
 
         unallocated_nodes is the exhaustive list of every node with any free
         GPU slot (from a fully-empty node down to a single stray GPU);
@@ -196,17 +206,11 @@ class PIQCGenerator:
         largest single node's free count is the real usable ceiling, not the
         cluster-wide sum -- same reasoning FragmentedNodeInfo's own docstring
         gives for why a fragmented node's slots are "stranded."
-
-        Returns None (no object emitted) when there's nothing to report,
-        rather than a zeroed-out cluster workload for every scan.
         """
-        if not unallocated_nodes and not fragmented_nodes:
-            return None
-
         total_free = sum(n.unallocated_gpus for n in unallocated_nodes)
         largest_block = max((n.unallocated_gpus for n in unallocated_nodes), default=0)
 
-        facts: dict[str, FactValue] = {
+        return {
             "cluster.totalFreeGpus": FactValue(
                 value=total_free,
                 source=Source(type=SourceType.K8S_API, method="node_status"),
@@ -227,21 +231,16 @@ class PIQCGenerator:
             ),
         }
 
-        return WorkloadObject(
-            workload_id="ns/gpu-pool/cluster/fleet-wide",
-            kind="Cluster",
-            name="fleet-wide",
-            namespace="gpu-pool",
-            images=None,
-            pods=None,
-            facts=facts,
-        )
-
-    def _build_pending_pod_workload(self, pod: PendingGPUPod) -> WorkloadObject:
+    def _build_pending_pod_workload(
+        self,
+        pod: PendingGPUPod,
+        unallocated_nodes: list[UnallocatedNodeInfo],
+        fragmented_nodes: list[FragmentedNodeInfo],
+    ) -> WorkloadObject:
         """Build a pod-scoped WorkloadObject for a pod stuck Pending on GPU
         capacity, from _analyze_pending_gpu_pods() -- same "computed for the
         CLI report, never wired into the facts bundle" gap as the cluster
-        fragmentation facts above.
+        fragmentation facts folded in here.
 
         deployment.gpuType is deliberately not set here: unlike a running
         pod (whose actual GPU model piqc reads live from the container via
@@ -267,6 +266,7 @@ class PIQCGenerator:
                 observed_at=self._timestamp,
             ),
         }
+        facts.update(self._cluster_fragmentation_facts(unallocated_nodes, fragmented_nodes))
         if pod.parallelism_strategy is not None:
             facts["deployment.parallelismStrategy"] = FactValue(
                 value=pod.parallelism_strategy,
