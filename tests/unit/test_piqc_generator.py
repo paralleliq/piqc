@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from piqc.core.orchestrator import FragmentedNodeInfo, PendingGPUPod, UnallocatedNodeInfo
 from piqc.generators.piqc_generator import PIQCGenerator
 from piqc.models.modelspec import (
     CollectionMetadata,
@@ -46,6 +47,7 @@ def create_test_modelspec(
     max_model_len: int = 4096,
     max_sequences: int = 256,
     tensor_parallel: int = 1,
+    pipeline_parallel: int = 1,
     gpu_count: int = 1,
     gpu_type: str = "NVIDIA A100-SXM4-80GB",
     gpu_memory: str = "80GB",
@@ -111,6 +113,7 @@ def create_test_modelspec(
             max_model_len=max_model_len,
             max_sequences=max_sequences,
             tensor_parallel_size=tensor_parallel,
+            pipeline_parallel_size=pipeline_parallel,
             quantization=None,
         ),
         resources=ResourceInfo(
@@ -630,3 +633,164 @@ class TestNotes:
             notes = data.get("notes", [])
             assert len(notes) >= 1
             assert any("runtime" in note.lower() for note in notes)
+
+
+class TestParallelismStrategy:
+    """Tests for deployment.parallelismStrategy -- tensor_parallel_cross_node_v1
+    and fragmentation_v1 both gate on this value directly."""
+
+    def test_tensor_parallel_size_derives_tensor_strategy(self) -> None:
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(tensor_parallel=8)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert facts["deployment.parallelismStrategy"]["value"] == "tensor"
+
+    def test_pipeline_parallel_size_derives_pipeline_strategy(self) -> None:
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(tensor_parallel=1, pipeline_parallel=4)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert facts["deployment.parallelismStrategy"]["value"] == "pipeline"
+
+    def test_no_parallelism_omits_the_fact(self) -> None:
+        """Size of 1 (vLLM's own default) means "not using this strategy" --
+        the fact shouldn't be silently reported as some other value."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(tensor_parallel=1, pipeline_parallel=1)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert "deployment.parallelismStrategy" not in facts
+
+
+class TestClusterFragmentationWorkload:
+    """Tests for the cluster-scoped WorkloadObject fragmentation_v1 needs --
+    aggregated from data _analyze_node_capacity()/_analyze_fragmented_nodes()
+    already compute for the CLI's own table report, wired into this bundle
+    for the first time."""
+
+    def test_no_data_emits_no_cluster_workload(self) -> None:
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+            with open(output_file) as f:
+                data = json.load(f)
+
+            assert not any(o["workloadId"].endswith("/cluster/fleet-wide") for o in data["objects"])
+
+    def test_totals_and_largest_block_and_fragmented_count(self) -> None:
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec()
+        unallocated = [
+            UnallocatedNodeInfo(node_name="node-a", gpu_type="H100", total_gpus=8, allocated_gpus=7, unallocated_gpus=1),
+            UnallocatedNodeInfo(node_name="node-b", gpu_type="H100", total_gpus=8, allocated_gpus=3, unallocated_gpus=5),
+        ]
+        fragmented = [
+            FragmentedNodeInfo(node_name="node-a", gpu_type="H100", total_gpus=8, allocated_gpus=7, stranded_gpus=1, min_model_gpus_needed=2),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate(
+                [modelspec],
+                tmpdir,
+                unallocated_nodes=unallocated,
+                fragmented_nodes=fragmented,
+            )
+            with open(output_file) as f:
+                data = json.load(f)
+
+            cluster_obj = next(o for o in data["objects"] if o["workloadId"] == "ns/gpu-pool/cluster/fleet-wide")
+            facts = cluster_obj["facts"]
+            assert facts["cluster.totalFreeGpus"]["value"] == 6
+            assert facts["cluster.largestContiguousBlock"]["value"] == 5
+            assert facts["cluster.fragmentedNodeCount"]["value"] == 1
+
+    def test_fragmented_only_no_unallocated_still_emits(self) -> None:
+        """Every fragmented node is also unallocated by definition
+        (_analyze_fragmentation only runs against the unallocated list) --
+        this guards the case where only fragmented_nodes is non-empty at the
+        call site regardless."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec()
+        fragmented = [
+            FragmentedNodeInfo(node_name="node-a", gpu_type="L4", total_gpus=4, allocated_gpus=3, stranded_gpus=1, min_model_gpus_needed=2),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate(
+                [modelspec], tmpdir, unallocated_nodes=[], fragmented_nodes=fragmented
+            )
+            with open(output_file) as f:
+                data = json.load(f)
+
+            cluster_obj = next(o for o in data["objects"] if o["workloadId"] == "ns/gpu-pool/cluster/fleet-wide")
+            assert cluster_obj["facts"]["cluster.fragmentedNodeCount"]["value"] == 1
+            assert cluster_obj["facts"]["cluster.totalFreeGpus"]["value"] == 0
+
+
+class TestPendingPodWorkload:
+    """Tests for the pod-scoped WorkloadObject fragmentation_v1's demand
+    side needs, from _analyze_pending_gpu_pods()."""
+
+    def test_pending_pod_facts_emitted(self) -> None:
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec()
+        pending = [
+            PendingGPUPod(
+                pod_name="vllm-70b",
+                namespace="inference",
+                gpus_needed=8,
+                pending_minutes=47.3,
+                parallelism_strategy="tensor",
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir, pending_gpu_pods=pending)
+            with open(output_file) as f:
+                data = json.load(f)
+
+            pod_obj = next(o for o in data["objects"] if o["workloadId"] == "ns/inference/pod/vllm-70b")
+            facts = pod_obj["facts"]
+            assert facts["job.pendingGpuCount"]["value"] == 8
+            assert facts["job.pendingSinceMinutes"]["value"] == 47.3
+            assert facts["deployment.parallelismStrategy"]["value"] == "tensor"
+
+    def test_no_parallelism_strategy_omits_the_fact(self) -> None:
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec()
+        pending = [
+            PendingGPUPod(
+                pod_name="batch-job",
+                namespace="training",
+                gpus_needed=2,
+                pending_minutes=5.0,
+                parallelism_strategy=None,
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir, pending_gpu_pods=pending)
+            with open(output_file) as f:
+                data = json.load(f)
+
+            pod_obj = next(o for o in data["objects"] if o["workloadId"] == "ns/training/pod/batch-job")
+            assert "deployment.parallelismStrategy" not in pod_obj["facts"]
+            assert "deployment.gpuType" not in pod_obj["facts"]

@@ -464,6 +464,8 @@ def scan(
                 cluster_name=conn_info.get('cluster'),
                 namespaces=namespaces,
                 unallocated_nodes=result.unallocated_nodes,
+                fragmented_nodes=result.fragmented_nodes,
+                pending_gpu_pods=result.pending_gpu_pods,
             )
             print_info(f"PIQC facts bundle generated:")
             console.print(f"       File: {piqc_file}")

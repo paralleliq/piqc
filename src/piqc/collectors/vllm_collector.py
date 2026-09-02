@@ -102,10 +102,32 @@ CLI_ARG_MAPPING = {
 }
 
 
+def derive_parallelism_strategy(
+    tensor_parallel_size: Optional[int],
+    pipeline_parallel_size: Optional[int],
+) -> Optional[str]:
+    """Categorical parallelism strategy for tensor_parallel_cross_node_v1 and
+    fragmentation_v1, derived from the tensor/pipeline parallel sizes both
+    rules already require as a raw fact today. Only "tensor" is meaningful
+    to either rule (both are gated on it specifically -- tensor parallelism
+    is the one strategy that needs a contiguous, node-local GPU block; see
+    fragmentation_v1.yaml's own notes), so pipeline is reported for
+    completeness but nothing currently reads it.
+
+    A size of 1 means "not using this strategy" (vLLM's own default), not
+    "using it with a degree of 1" -- only a size > 1 counts.
+    """
+    if tensor_parallel_size and tensor_parallel_size > 1:
+        return "tensor"
+    if pipeline_parallel_size and pipeline_parallel_size > 1:
+        return "pipeline"
+    return None
+
+
 class VLLMCollector:
     """
     Collects vLLM-specific configuration from deployments.
-    
+
     Parses environment variables and CLI arguments to extract
     the complete vLLM configuration.
     """

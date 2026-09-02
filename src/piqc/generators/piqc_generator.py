@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from piqc import __version__
-from piqc.core.orchestrator import UnallocatedNodeInfo
+from piqc.collectors.vllm_collector import derive_parallelism_strategy
+from piqc.core.orchestrator import FragmentedNodeInfo, PendingGPUPod, UnallocatedNodeInfo
 from piqc.models.modelspec import ModelSpec
 from piqc.models.piqc_schema import (
     Confidence,
@@ -55,6 +56,8 @@ class PIQCGenerator:
         cluster_name: Optional[str] = None,
         namespaces: Optional[list[str]] = None,
         unallocated_nodes: Optional[list[UnallocatedNodeInfo]] = None,
+        fragmented_nodes: Optional[list[FragmentedNodeInfo]] = None,
+        pending_gpu_pods: Optional[list[PendingGPUPod]] = None,
     ) -> str:
         """
         Generate piqc-facts.json file.
@@ -69,6 +72,18 @@ class PIQCGenerator:
                 (from Orchestrator._analyze_node_capacity). Each becomes its
                 own node-scoped WorkloadObject, since piqc's bundle format
                 has no separate node-level object type today.
+            fragmented_nodes: Nodes with leftover GPU slots too small for any
+                known model (from Orchestrator._analyze_fragmented_nodes).
+                Already computed for the CLI's own table report
+                (table_generator.py) but never reached this bundle before --
+                aggregated into one cluster-scoped WorkloadObject alongside
+                unallocated_nodes, since fragmentation_v1 needs cluster-wide
+                totals, not a per-node breakdown.
+            pending_gpu_pods: Pods stuck Pending because no node can satisfy
+                their GPU request (from Orchestrator._analyze_pending_gpu_pods).
+                Same "computed for the CLI report, never wired here" gap as
+                fragmented_nodes -- each becomes its own pod-scoped
+                WorkloadObject.
 
         Returns:
             Path to generated file.
@@ -79,6 +94,14 @@ class PIQCGenerator:
         # Build workload objects
         objects = [self._build_workload(spec) for spec in modelspecs]
         objects.extend(self._build_node_workload(node) for node in (unallocated_nodes or []))
+        cluster_workload = self._build_cluster_fragmentation_workload(
+            unallocated_nodes or [], fragmented_nodes or []
+        )
+        if cluster_workload is not None:
+            objects.append(cluster_workload)
+        objects.extend(
+            self._build_pending_pod_workload(pod) for pod in (pending_gpu_pods or [])
+        )
 
         # Build bundle
         bundle = PIQCBundle(
@@ -151,6 +174,112 @@ class PIQCGenerator:
             kind="Node",
             name=node.node_name,
             namespace="gpu-pool",
+            images=None,
+            pods=None,
+            facts=facts,
+        )
+
+    def _build_cluster_fragmentation_workload(
+        self,
+        unallocated_nodes: list[UnallocatedNodeInfo],
+        fragmented_nodes: list[FragmentedNodeInfo],
+    ) -> Optional[WorkloadObject]:
+        """Build the single cluster-scoped WorkloadObject fragmentation_v1
+        needs, from data _analyze_node_capacity()/_analyze_fragmented_nodes()
+        already compute today for the CLI's own table report -- this was
+        never emitted into the facts bundle before.
+
+        unallocated_nodes is the exhaustive list of every node with any free
+        GPU slot (from a fully-empty node down to a single stray GPU);
+        fragmented_nodes is the subset whose leftover slots are too small to
+        fit any known model. GPUs can't be combined across nodes, so the
+        largest single node's free count is the real usable ceiling, not the
+        cluster-wide sum -- same reasoning FragmentedNodeInfo's own docstring
+        gives for why a fragmented node's slots are "stranded."
+
+        Returns None (no object emitted) when there's nothing to report,
+        rather than a zeroed-out cluster workload for every scan.
+        """
+        if not unallocated_nodes and not fragmented_nodes:
+            return None
+
+        total_free = sum(n.unallocated_gpus for n in unallocated_nodes)
+        largest_block = max((n.unallocated_gpus for n in unallocated_nodes), default=0)
+
+        facts: dict[str, FactValue] = {
+            "cluster.totalFreeGpus": FactValue(
+                value=total_free,
+                source=Source(type=SourceType.K8S_API, method="node_status"),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            ),
+            "cluster.largestContiguousBlock": FactValue(
+                value=largest_block,
+                source=Source(type=SourceType.K8S_API, method="node_status"),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            ),
+            "cluster.fragmentedNodeCount": FactValue(
+                value=len(fragmented_nodes),
+                source=Source(type=SourceType.K8S_API, method="node_status"),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            ),
+        }
+
+        return WorkloadObject(
+            workload_id="ns/gpu-pool/cluster/fleet-wide",
+            kind="Cluster",
+            name="fleet-wide",
+            namespace="gpu-pool",
+            images=None,
+            pods=None,
+            facts=facts,
+        )
+
+    def _build_pending_pod_workload(self, pod: PendingGPUPod) -> WorkloadObject:
+        """Build a pod-scoped WorkloadObject for a pod stuck Pending on GPU
+        capacity, from _analyze_pending_gpu_pods() -- same "computed for the
+        CLI report, never wired into the facts bundle" gap as the cluster
+        fragmentation facts above.
+
+        deployment.gpuType is deliberately not set here: unlike a running
+        pod (whose actual GPU model piqc reads live from the container via
+        gpu_collector.py), a Pending pod was never scheduled to a node, so
+        there's no live GPU to query and no reliable static source for the
+        model either -- resource requests only say "how many," not "which
+        kind." Left absent rather than guessed; fragmentation_v1's `when`
+        clause doesn't require it, only the messageTemplate references it.
+        """
+        workload_id = f"ns/{pod.namespace}/pod/{pod.pod_name}"
+
+        facts: dict[str, FactValue] = {
+            "job.pendingGpuCount": FactValue(
+                value=pod.gpus_needed,
+                source=Source(type=SourceType.K8S_API, method="pod_spec"),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            ),
+            "job.pendingSinceMinutes": FactValue(
+                value=round(pod.pending_minutes, 1),
+                source=Source(type=SourceType.K8S_API, method="pod_metadata"),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            ),
+        }
+        if pod.parallelism_strategy is not None:
+            facts["deployment.parallelismStrategy"] = FactValue(
+                value=pod.parallelism_strategy,
+                source=Source(type=SourceType.K8S_API, method="container_args"),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            )
+
+        return WorkloadObject(
+            workload_id=workload_id,
+            kind="Pod",
+            name=pod.pod_name,
+            namespace=pod.namespace,
             images=None,
             pods=None,
             facts=facts,
@@ -266,6 +395,24 @@ class PIQCGenerator:
         if inference.tensor_parallel_size:
             facts["runtime.tensorParallel"] = FactValue(
                 value=inference.tensor_parallel_size,
+                source=Source(
+                    type=SourceType.K8S_API,
+                    method="container_args",
+                ),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            )
+
+        # deployment.parallelismStrategy -- tensor_parallel_cross_node_v1 and
+        # fragmentation_v1 both gate on this categorical value directly; it's
+        # a pure derivation from the two sizes above, engine-agnostic like
+        # them, so it belongs here rather than in _extract_vllm_facts.
+        strategy = derive_parallelism_strategy(
+            inference.tensor_parallel_size, inference.pipeline_parallel_size
+        )
+        if strategy is not None:
+            facts["deployment.parallelismStrategy"] = FactValue(
+                value=strategy,
                 source=Source(
                     type=SourceType.K8S_API,
                     method="container_args",

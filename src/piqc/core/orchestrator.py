@@ -21,7 +21,7 @@ from piqc.collectors.vllm_api_client import (
     VLLMRuntimeMetrics,
     discover_vllm_service,
 )
-from piqc.collectors.vllm_collector import VLLMCollector
+from piqc.collectors.vllm_collector import VLLMCollector, derive_parallelism_strategy
 from piqc.core.coverage import CoverageAnalyzer
 from piqc.core.discovery import DeploymentDiscovery, classify_infra_pod
 from piqc.core.k8s_client import K8sClient
@@ -75,6 +75,7 @@ class PendingGPUPod:
     namespace: str
     gpus_needed: int
     pending_minutes: float   # how long the pod has been waiting
+    parallelism_strategy: Optional[str] = None  # "tensor" | "pipeline" | None
 
 
 @dataclass
@@ -908,12 +909,29 @@ class ScanOrchestrator:
             pod_name = owner_name or raw_name
             namespace = pod.metadata.namespace if pod.metadata else "unknown"
 
+            # fragmentation_v1 is gated on deployment.parallelismStrategy ==
+            # "tensor" specifically -- a Pending pod was never scheduled, so
+            # there's no running container to introspect, but the pod SPEC
+            # (env vars, command/args) exists in the API regardless of
+            # scheduling state, the same source a running pod's parallelism
+            # facts already come from (see PIQCGenerator._extract_runtime_facts).
+            container = self.discovery._get_main_container(pod)
+            container_args = (
+                list((container.command or []) + (container.args or [])) if container else []
+            )
+            env_vars = self.discovery._extract_env_vars(pod)
+            vllm_config = self.vllm_collector.collect(env_vars=env_vars, container_args=container_args)
+            parallelism_strategy = derive_parallelism_strategy(
+                vllm_config.tensor_parallel_size, vllm_config.pipeline_parallel_size
+            )
+
             pending.append(
                 PendingGPUPod(
                     pod_name=pod_name,
                     namespace=namespace,
                     gpus_needed=gpus_needed,
                     pending_minutes=pending_minutes,
+                    parallelism_strategy=parallelism_strategy,
                 )
             )
             logger.debug(
