@@ -13,7 +13,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from piqc.core.orchestrator import FragmentedNodeInfo, PendingGPUPod, UnallocatedNodeInfo
+from piqc.core.orchestrator import (
+    FragmentedNodeInfo,
+    PendingGPUPod,
+    UnallocatedNodeInfo,
+    WorkloadPlacement,
+)
 from piqc.generators.piqc_generator import PIQCGenerator
 from piqc.models.modelspec import (
     CollectionMetadata,
@@ -848,3 +853,128 @@ class TestPendingPodWorkload:
 
         issue_codes = [i["issueCode"] for i in result["issues"]]
         assert "fragmentation_v1" in issue_codes
+
+
+class TestPlacementFacts:
+    """Tests for placement.nodeCount/node.gpuCount --
+    tensor_parallel_cross_node_v1's two facts, from
+    Orchestrator._analyze_workload_placement()."""
+
+    def test_placement_facts_emitted(self) -> None:
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(name="llama-70b", namespace="inference")
+        placements = {
+            "inference/llama-70b": WorkloadPlacement(node_count=2, node_gpu_count=8),
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate(
+                [modelspec], tmpdir, workload_placements=placements
+            )
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert facts["placement.nodeCount"]["value"] == 2
+            assert facts["node.gpuCount"]["value"] == 8
+
+    def test_no_placement_data_omits_both_facts(self) -> None:
+        """Absent, not zeroed -- a workload piqc couldn't resolve node
+        assignment for shouldn't look like a confirmed single-node
+        placement."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(name="llama-70b", namespace="inference")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert "placement.nodeCount" not in facts
+            assert "node.gpuCount" not in facts
+
+    def test_node_gpu_count_none_omits_only_that_fact(self) -> None:
+        """node_count can be known even when node capacity data couldn't be
+        resolved (e.g. list_nodes() failed) -- the two facts are independent."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(name="llama-70b", namespace="inference")
+        placements = {
+            "inference/llama-70b": WorkloadPlacement(node_count=2, node_gpu_count=None),
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate(
+                [modelspec], tmpdir, workload_placements=placements
+            )
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert facts["placement.nodeCount"]["value"] == 2
+            assert "node.gpuCount" not in facts
+
+    def test_placement_keyed_by_namespace_and_name_not_shared_across_workloads(self) -> None:
+        generator = PIQCGenerator()
+        specs = [
+            create_test_modelspec(name="model-a", namespace="ns1"),
+            create_test_modelspec(name="model-b", namespace="ns2"),
+        ]
+        placements = {
+            "ns1/model-a": WorkloadPlacement(node_count=3, node_gpu_count=8),
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate(specs, tmpdir, workload_placements=placements)
+            with open(output_file) as f:
+                data = json.load(f)
+
+            obj_a = next(o for o in data["objects"] if o["name"] == "model-a")
+            obj_b = next(o for o in data["objects"] if o["name"] == "model-b")
+            assert obj_a["facts"]["placement.nodeCount"]["value"] == 3
+            assert "placement.nodeCount" not in obj_b["facts"]
+
+    def test_rule_actually_fires(self) -> None:
+        """End-to-end regression guard, same shape as fragmentation_v1's
+        own test above: run the real tensor_parallel_cross_node_v1 rule
+        against a bundle shaped exactly like generate()'s real output.
+        scope: workload here (unlike fragmentation_v1's scope: cluster),
+        so this isn't guarding against the same cross-object bug -- it's
+        guarding against a plain mistake in the fact names/values this
+        rule's `when`/`evidence` actually expect.
+        """
+        import sys
+        from pathlib import Path
+
+        platform_root = Path(__file__).resolve().parents[3] / "platform"
+        if not platform_root.is_dir():
+            pytest.skip("platform repo not checked out alongside piqc")
+        sys.path.insert(0, str(platform_root / "services" / "control-plane"))
+        from src.advisor_integration import evaluate_inference_reliability  # type: ignore[import-not-found]
+
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(
+            name="llama-70b",
+            namespace="inference",
+            model_name="meta-llama/Llama-3-70b-hf",
+            tensor_parallel=8,
+            gpu_type="NVIDIA H100-SXM4-80GB",
+            gpu_count=8,
+        )
+        placements = {
+            "inference/llama-70b": WorkloadPlacement(node_count=2, node_gpu_count=8),
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate(
+                [modelspec], tmpdir, workload_placements=placements
+            )
+            with open(output_file) as f:
+                bundle = json.load(f)
+
+        workload_obj = bundle["objects"][0]
+        scan = {"facts": {k: {"value": v["value"]} for k, v in workload_obj["facts"].items()}}
+        result = evaluate_inference_reliability(scan)
+
+        issue_codes = [i["issueCode"] for i in result["issues"]]
+        assert "tensor_parallel_cross_node_v1" in issue_codes

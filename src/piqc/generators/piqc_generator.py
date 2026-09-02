@@ -13,7 +13,12 @@ from typing import Any, Optional
 
 from piqc import __version__
 from piqc.collectors.vllm_collector import derive_parallelism_strategy
-from piqc.core.orchestrator import FragmentedNodeInfo, PendingGPUPod, UnallocatedNodeInfo
+from piqc.core.orchestrator import (
+    FragmentedNodeInfo,
+    PendingGPUPod,
+    UnallocatedNodeInfo,
+    WorkloadPlacement,
+)
 from piqc.models.modelspec import ModelSpec
 from piqc.models.piqc_schema import (
     Confidence,
@@ -58,6 +63,7 @@ class PIQCGenerator:
         unallocated_nodes: Optional[list[UnallocatedNodeInfo]] = None,
         fragmented_nodes: Optional[list[FragmentedNodeInfo]] = None,
         pending_gpu_pods: Optional[list[PendingGPUPod]] = None,
+        workload_placements: Optional[dict[str, WorkloadPlacement]] = None,
     ) -> str:
         """
         Generate piqc-facts.json file.
@@ -88,15 +94,27 @@ class PIQCGenerator:
                 fragmented_nodes -- each becomes its own pod-scoped
                 WorkloadObject, carrying both its own demand facts and the
                 cluster-wide fragmentation facts above.
+            workload_placements: Per-deployment node spread and node-pool
+                GPU capacity (from Orchestrator._analyze_workload_placement),
+                keyed by "namespace/name" -- InferenceDeployment objects
+                (which carry the pod_names this is computed from) don't
+                survive past ModelSpec conversion, so this is the join key
+                back to each spec. Attached directly onto the matching
+                ModelSpec's own WorkloadObject (see _extract_placement_facts),
+                not a synthetic object -- these facts genuinely belong to
+                that workload, unlike fragmentation's cluster-wide numbers.
 
         Returns:
             Path to generated file.
         """
         self._timestamp = datetime.utcnow().isoformat() + "Z"
         self._fact_errors = []
+        workload_placements = workload_placements or {}
 
         # Build workload objects
-        objects = [self._build_workload(spec) for spec in modelspecs]
+        objects = [
+            self._build_workload(spec, workload_placements) for spec in modelspecs
+        ]
         objects.extend(self._build_node_workload(node) for node in (unallocated_nodes or []))
         objects.extend(
             self._build_pending_pod_workload(pod, unallocated_nodes or [], fragmented_nodes or [])
@@ -285,7 +303,9 @@ class PIQCGenerator:
             facts=facts,
         )
 
-    def _build_workload(self, spec: ModelSpec) -> WorkloadObject:
+    def _build_workload(
+        self, spec: ModelSpec, workload_placements: dict[str, WorkloadPlacement]
+    ) -> WorkloadObject:
         """Build a WorkloadObject from a ModelSpec."""
         workload_id = f"ns/{spec.metadata.namespace}/{spec.kubernetes.deployment_type.lower()}/{spec.metadata.name}"
 
@@ -300,6 +320,7 @@ class PIQCGenerator:
         self._extract_k8s_facts(spec, facts, workload_id)
         self._extract_endpoint_facts(spec, facts, workload_id)
         self._extract_autoscaling_facts(spec, facts, workload_id)
+        self._extract_placement_facts(spec, facts, workload_placements)
 
         # Check for missing required facts
         self._check_required_facts(facts, workload_id)
@@ -1029,6 +1050,41 @@ class PIQCGenerator:
                     type=SourceType.SCANNER,
                     method="hpa_absence",
                 ),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            )
+
+    def _extract_placement_facts(
+        self,
+        spec: ModelSpec,
+        facts: dict[str, FactValue],
+        workload_placements: dict[str, WorkloadPlacement],
+    ) -> None:
+        """placement.nodeCount / node.gpuCount -- tensor_parallel_cross_node_v1's
+        two facts, from Orchestrator._analyze_workload_placement(). Looked
+        up by "namespace/name" since the WorkloadPlacement was computed
+        against the InferenceDeployment this ModelSpec came from, not the
+        spec itself (see that method's own docstring for why).
+
+        Silently omitted (not zeroed) when no placement data exists for
+        this workload -- e.g. every pod's node couldn't be resolved, or
+        placement analysis wasn't run at all -- same "absent, not guessed"
+        convention _build_pending_pod_workload uses for deployment.gpuType.
+        """
+        placement = workload_placements.get(f"{spec.metadata.namespace}/{spec.metadata.name}")
+        if placement is None:
+            return
+
+        facts["placement.nodeCount"] = FactValue(
+            value=placement.node_count,
+            source=Source(type=SourceType.K8S_API, method="pod_spec"),
+            data_confidence=Confidence.HIGH,
+            observed_at=self._timestamp,
+        )
+        if placement.node_gpu_count is not None:
+            facts["node.gpuCount"] = FactValue(
+                value=placement.node_gpu_count,
+                source=Source(type=SourceType.K8S_API, method="node_status"),
                 data_confidence=Confidence.HIGH,
                 observed_at=self._timestamp,
             )

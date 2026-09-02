@@ -6,6 +6,7 @@ data from all sources and generating ModelSpec output.
 """
 
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -96,6 +97,20 @@ class FragmentedNodeInfo:
     min_model_gpus_needed: int  # smallest GPU footprint seen in the cluster
 
 
+@dataclass
+class WorkloadPlacement:
+    """Per-deployment node spread and node-pool GPU capacity -- the raw
+    ingredient tensor_parallel_cross_node_v1 needs (placement.nodeCount,
+    node.gpuCount) and no rule can see today, from a join between a
+    deployment's own pod_names (InferenceDeployment already aggregates
+    every pod across all replicas, not just one) and each pod's actual
+    node assignment.
+    """
+
+    node_count: int
+    node_gpu_count: Optional[int]  # None if no pod's node could be resolved
+
+
 class ScanResult:
     """Results from a scan operation."""
 
@@ -110,6 +125,11 @@ class ScanResult:
         self.unallocated_nodes: list[UnallocatedNodeInfo] = []
         self.fragmented_nodes: list[FragmentedNodeInfo] = []
         self.pending_gpu_pods: list[PendingGPUPod] = []
+        # Keyed by "namespace/name" -- InferenceDeployment objects (which
+        # carry pod_names) don't survive past ModelSpec conversion, so this
+        # is computed before that conversion and looked back up by identity
+        # once PIQCGenerator needs it per ModelSpec.
+        self.workload_placements: dict[str, WorkloadPlacement] = {}
         self.infra_pod_counts: dict[str, int] = {}
         self.coverage: Optional[CoverageReport] = None
         self.cloud_provider: Optional[str] = None
@@ -240,8 +260,17 @@ class ScanOrchestrator:
         # Group deployments
         grouped = self.discovery.group_deployments(all_deployments)
         result.deployments_found = len(grouped)
-        
+
         logger.info(f"Found {len(grouped)} inference deployment(s)")
+
+        # Node spread per deployment (tensor_parallel_cross_node_v1's
+        # placement.nodeCount/node.gpuCount) -- must run on `grouped`
+        # (InferenceDeployment, carries full pod_names) before ModelSpec
+        # conversion below discards that.
+        try:
+            result.workload_placements = self._analyze_workload_placement(grouped)
+        except Exception as e:
+            result.add_warning(f"Workload placement analysis failed: {e}")
         
         # Generate ModelSpecs
         if self.workers > 1 and len(grouped) > 1:
@@ -691,6 +720,77 @@ class ScanOrchestrator:
             )
             for m in metrics
         ]
+
+    def _analyze_workload_placement(
+        self, deployments: list[InferenceDeployment]
+    ) -> dict[str, WorkloadPlacement]:
+        """For each deployment, count the distinct nodes its pods actually
+        landed on and the GPU capacity of the node hosting most of them.
+
+        Must run on InferenceDeployment objects (which carry the full
+        pod_names list, aggregated across every replica by
+        DeploymentDiscovery.group_deployments), not ModelSpecs -- GPU
+        metrics collection only ever inspects a deployment's first pod
+        ("Just first pod for now"), so a ModelSpec's own GPUInfo list can't
+        be used to reconstruct which nodes the *other* replicas are on.
+
+        Uses one list_all_pods() call to build a single pod -> node map,
+        the same field_selector and iteration shape _analyze_node_capacity()
+        and _analyze_pending_gpu_pods() already use -- kept as its own
+        independent call rather than sharing a cache, matching how those
+        two also each fetch pods separately today.
+        """
+        try:
+            all_pods = self.k8s_client.list_all_pods(
+                field_selector="status.phase=Running",
+            )
+        except Exception as e:
+            logger.debug(f"Could not list pods for placement analysis: {e}")
+            return {}
+
+        pod_node: dict[str, str] = {}
+        for pod in all_pods:
+            if not pod.metadata or not pod.spec or not pod.spec.node_name:
+                continue
+            pod_node[f"{pod.metadata.namespace}/{pod.metadata.name}"] = pod.spec.node_name
+
+        try:
+            nodes = self.k8s_client.list_nodes()
+        except Exception as e:
+            logger.debug(f"Could not list nodes for placement analysis: {e}")
+            nodes = []
+
+        node_gpu_totals: dict[str, int] = {}
+        for node in nodes:
+            if not node.status or not node.status.allocatable:
+                continue
+            total_gpus = int(node.status.allocatable.get("nvidia.com/gpu", "0"))
+            if total_gpus > 0:
+                node_gpu_totals[node.metadata.name] = total_gpus
+
+        placements: dict[str, WorkloadPlacement] = {}
+        for deployment in deployments:
+            node_names = [
+                pod_node[key]
+                for pod_name in deployment.pod_names
+                if (key := f"{deployment.namespace}/{pod_name}") in pod_node
+            ]
+            if not node_names:
+                continue
+
+            # Node hosting the most of this deployment's pods -- the
+            # representative node pool for node.gpuCount when pods span
+            # more than one node (heterogeneous pools are rare, and this
+            # picks the node type most of the deployment actually landed
+            # on rather than an arbitrary one).
+            most_common_node = Counter(node_names).most_common(1)[0][0]
+
+            placements[f"{deployment.namespace}/{deployment.name}"] = WorkloadPlacement(
+                node_count=len(set(node_names)),
+                node_gpu_count=node_gpu_totals.get(most_common_node),
+            )
+
+        return placements
 
     def _analyze_node_capacity(self) -> list[UnallocatedNodeInfo]:
         """

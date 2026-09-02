@@ -466,6 +466,7 @@ def scan(
                 unallocated_nodes=result.unallocated_nodes,
                 fragmented_nodes=result.fragmented_nodes,
                 pending_gpu_pods=result.pending_gpu_pods,
+                workload_placements=result.workload_placements,
             )
             print_info(f"PIQC facts bundle generated:")
             console.print(f"       File: {piqc_file}")
