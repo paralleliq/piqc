@@ -1,0 +1,69 @@
+# Recurring scan for trend data — dark capacity, tier misplacement, and
+# every other rule that only needs one snapshot per run, not continuous
+# monitoring. Same free scan as scan-job.yaml, just on a schedule and pushed
+# to the platform, so the dashboard's trend charts (e.g. Dark Capacity Trend)
+# have more than one data point to work with.
+#
+# Setup:
+#   1. Register this cluster with the platform (or ask your Paralleliq
+#      contact to) to get a cluster API key — POST /v1/clusters returns it
+#      once, so save it immediately.
+#   2. Create a Secret with that key:
+#        kubectl create secret generic piqc-api-key -n kube-system \
+#          --from-literal=apiKey=<your-key>
+#   3. Edit --push-url and --cluster-id below to match your platform URL
+#      and this cluster's registered ID.
+#   4. kubectl apply -f scan-cronjob.yaml
+#
+# Each run is independent — a missed run (cluster down, etc.) just means one
+# fewer data point in the trend, nothing to reconcile or backfill.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: piqc-scan-daily
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: piqc
+    app.kubernetes.io/part-of: piqc
+spec:
+  schedule: "0 6 * * *" # daily at 06:00 UTC — adjust to taste
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 600
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: piqc
+        spec:
+          serviceAccountName: piqc
+          restartPolicy: Never
+          containers:
+            - name: piqc
+              image: ghcr.io/paralleliq/piqc:latest
+              imagePullPolicy: Always
+              args:
+                - scan
+                - --format
+                - table
+                - --collect-runtime
+                - --push-url
+                - "https://api.paralleliq.ai" # <-- replace with your platform URL
+                - --cluster-id
+                - "CHANGE-ME" # <-- replace with this cluster's registered ID
+              env:
+                - name: PIQC_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: piqc-api-key
+                      key: apiKey
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "256Mi"

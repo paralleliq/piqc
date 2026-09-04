@@ -5,6 +5,7 @@ Provides the command-line interface for scanning Kubernetes clusters
 and collecting facts about vLLM inference deployments.
 """
 
+import os
 import sys
 from typing import Optional
 
@@ -58,6 +59,7 @@ def _push_bundle(
     cluster_id: str,
     console: Console,
     debug: bool = False,
+    api_key: Optional[str] = None,
 ) -> None:
     """Read the generated piqc-facts.json and POST it to the platform ingest endpoint."""
     import json
@@ -88,8 +90,21 @@ def _push_bundle(
     console.print()
     console.print(f"[INFO] Pushing {len(workloads)} workload(s) to {ingest_url} ...")
 
+    # Falls back to PIQC_API_KEY so a recurring CronJob can source the key
+    # from a mounted Secret env var rather than a literal --api-key argument
+    # on the command line (which would otherwise leak via `kubectl describe
+    # pod` / process listings).
+    resolved_key = api_key or os.environ.get("PIQC_API_KEY")
+    headers = {"Authorization": f"Bearer {resolved_key}"} if resolved_key else None
+    if not resolved_key:
+        console.print(
+            "[yellow][WARN] No API key provided (--api-key or PIQC_API_KEY) — "
+            "pushing unauthenticated. The platform's /v1/ingest endpoint requires "
+            "a cluster API key, so this will likely fail with a 401.[/yellow]"
+        )
+
     try:
-        resp = _requests.post(ingest_url, json=payload, timeout=30)
+        resp = _requests.post(ingest_url, json=payload, headers=headers, timeout=30)
         resp.raise_for_status()
         results = resp.json()
         total_recs = sum(len(r.get("recommendations", [])) for r in results)
@@ -255,6 +270,16 @@ def main() -> None:
     metavar="ID",
     help="Cluster identifier sent with --push-url. Defaults to the Kubernetes cluster name.",
 )
+@click.option(
+    "--api-key",
+    type=str,
+    default=None,
+    metavar="KEY",
+    envvar="PIQC_API_KEY",
+    help="Cluster API key for --push-url, sent as a Bearer token. Falls back to the "
+    "PIQC_API_KEY environment variable — prefer that in scripts/CronJobs so the key "
+    "isn't visible in process listings.",
+)
 def scan(
     kubeconfig: Optional[str],
     context: Optional[str],
@@ -278,6 +303,7 @@ def scan(
     contribute_benchmarks: bool,
     push_url: Optional[str],
     cluster_id: Optional[str],
+    api_key: Optional[str],
 ) -> None:
     """
     Scan Kubernetes cluster for vLLM model deployments.
@@ -312,8 +338,13 @@ def scan(
         # Push facts to the ParallelIQ platform (closed-loop demo)
         piqc scan --push-url http://localhost:8000
 
-        # Push with an explicit cluster ID
-        piqc scan --push-url https://api.paralleliq.ai --cluster-id prod-cluster-1
+        # Push with an explicit cluster ID and API key (required against a
+        # real deployment — get a key by registering the cluster first)
+        piqc scan --push-url https://api.paralleliq.ai --cluster-id prod-cluster-1 --api-key piq_...
+
+        # Same, with the key from an env var instead (recommended for cron/CI —
+        # keeps the key out of process listings and shell history)
+        PIQC_API_KEY=piq_... piqc scan --push-url https://api.paralleliq.ai --cluster-id prod-cluster-1
     """
     # Setup logging
     setup_logging(verbose=verbose, debug=debug)
@@ -478,6 +509,7 @@ def scan(
                     cluster_id=cluster_id or conn_info.get('cluster') or conn_info.get('context') or 'unknown',
                     console=console,
                     debug=debug,
+                    api_key=api_key,
                 )
         
         console.print()
