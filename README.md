@@ -119,7 +119,10 @@ kubectl delete job piqc-scan -n kube-system
 
 > The job auto-deletes itself after 10 minutes (`ttlSecondsAfterFinished: 600`).
 
-**Want a trend, not just a snapshot?** A single scan tells you today's waste. To see it change over time — dark capacity climbing, tier misplacement recurring — run the scan on a schedule and push it to the platform: see [`deploy/scan-cronjob.yaml`](deploy/scan-cronjob.yaml). Same free scan, same RBAC, just recurring and authenticated with a cluster API key instead of one-shot and local-only.
+**Want a trend, not just a snapshot?** A single scan tells you today's waste. To see it change over time — dark capacity climbing, tier misplacement recurring — run the scan on a schedule and push it to the platform. Two ways to do that:
+
+- **One command:** the [`helm/piqc`](helm/piqc) chart — installs the RBAC and the recurring scan together. `helm template` it first to see exactly what it applies before installing; see [`helm/piqc/README.md`](helm/piqc/README.md).
+- **Plain YAML, no Helm:** [`deploy/scan-cronjob.yaml`](deploy/scan-cronjob.yaml) — same scan, same RBAC as above, just recurring and authenticated with a cluster API key instead of one-shot and local-only.
 
 ---
 

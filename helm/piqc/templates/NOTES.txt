@@ -1,0 +1,17 @@
+piqc installed as {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
+
+Cluster ID:  {{ .Values.clusterId }}
+Push URL:    {{ .Values.pushUrl }}
+Schedule:    {{ .Values.schedule }}
+
+Everything this chart grants is read-only against your cluster (get/list
+only, no write/patch/delete verbs) -- see templates/clusterrole.yaml, or
+run `helm template` against this chart before installing to see the exact
+manifests it applies.
+
+Check the first scheduled run:
+  kubectl get cronjob -n {{ .Release.Namespace }} {{ .Release.Name }}
+  kubectl get jobs -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+Then confirm in the platform dashboard that this cluster's Dark Capacity
+Trend chart is picking up new data points as scheduled runs land.
