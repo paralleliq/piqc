@@ -1,0 +1,56 @@
+image:
+  repository: ghcr.io/paralleliq/piqc
+  # Only `latest` is actually published to ghcr.io today (confirmed directly
+  # against the registry) -- matches deploy/scan-job.yaml and
+  # deploy/scan-cronjob.yaml. Change this once versioned tags are published.
+  tag: "latest"
+  pullPolicy: Always
+
+serviceAccount:
+  create: true
+  name: ""
+
+# Required, no default on purpose -- must match the cluster ID this cluster
+# was registered under in the platform (POST /v1/clusters or the dashboard's
+# Add Cluster flow).
+clusterId: ""
+
+# Required, no default on purpose -- the platform's API Gateway URL, reachable
+# from inside this cluster. e.g. https://api.paralleliq.ai
+pushUrl: ""
+
+# The cluster's API key (minted when the cluster was registered). Never put
+# a real key directly in values.yaml or on the --set command line if you can
+# avoid it -- it ends up in `helm history` and Helm's stored release state.
+# Prefer apiKeySecret.name pointing at a Secret you created yourself.
+apiKeySecret:
+  # If empty, the chart creates a Secret from apiKey below (fine for a quick
+  # start; for a real install, create the Secret yourself and set this).
+  name: ""
+  key: apiKey
+apiKey: ""
+
+# Standard cron syntax. Daily by default -- change to "0 * * * *" for hourly,
+# etc. Every run is independent; a missed run just means one fewer point in
+# the trend, nothing to reconcile.
+schedule: "0 6 * * *"
+
+# Passed straight through to `piqc scan`. Runtime metrics (KV cache, token
+# throughput) add a little time per pod but stay well inside the Job's
+# activeDeadlineSeconds below for realistic fleet sizes.
+collectRuntime: true
+
+job:
+  ttlSecondsAfterFinished: 600
+  activeDeadlineSeconds: 120
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "256Mi"

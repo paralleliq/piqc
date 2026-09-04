@@ -1,0 +1,50 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: piqc
+    app.kubernetes.io/instance: {{ .Release.Name }}
+rules:
+  # Read-only against every persistent resource here -- no update/patch/
+  # delete verb on any object, and no create verb except pods/exec below.
+  # That one create is how the K8s API authorizes an exec *session* (e.g.
+  # running nvidia-smi to read GPU stats) -- it starts a connection, it does
+  # not create or modify any resource. Nothing here can change your cluster.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list"]
+  # Optional: only used by `piqc scan --coverage` to check whether a
+  # ServiceMonitor targets vLLM's own /metrics port. Harmless to grant even
+  # on clusters without Prometheus Operator installed -- the CRD not existing
+  # just means this rule never matches anything.
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors"]
+    verbs: ["get", "list"]

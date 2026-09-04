@@ -1,0 +1,13 @@
+apiVersion: v2
+name: piqc
+description: >
+  Recurring free GPU-waste scan for Kubernetes. Installs the same read-only
+  RBAC as deploy/rbac.yaml plus a CronJob that runs `piqc scan` on a schedule
+  and pushes results to the Paralleliq platform, so trend charts (dark
+  capacity, tier misplacement) have more than a single snapshot to work with.
+  Every resource here is read-only against your workloads — get/list only,
+  no write/patch/delete verbs anywhere in the ClusterRole. Run
+  `helm template` first to see exactly what this applies before installing.
+type: application
+version: 0.1.0
+appVersion: "1.3.1"

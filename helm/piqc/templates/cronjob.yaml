@@ -1,0 +1,53 @@
+{{- if not .Values.clusterId }}
+{{- fail "clusterId is required (the cluster ID this cluster was registered under in the platform)." }}
+{{- end }}
+{{- if not .Values.pushUrl }}
+{{- fail "pushUrl is required (the platform's API Gateway URL, reachable from inside this cluster)." }}
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: piqc
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  schedule: {{ .Values.schedule | quote }}
+  concurrencyPolicy: {{ .Values.job.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.job.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.job.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
+      activeDeadlineSeconds: {{ .Values.job.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: piqc
+            app.kubernetes.io/instance: {{ .Release.Name }}
+        spec:
+          serviceAccountName: {{ .Values.serviceAccount.name | default (printf "%s" .Release.Name) }}
+          restartPolicy: Never
+          containers:
+            - name: piqc
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              args:
+                - scan
+                - --format
+                - table
+                {{- if .Values.collectRuntime }}
+                - --collect-runtime
+                {{- end }}
+                - --push-url
+                - {{ .Values.pushUrl | quote }}
+                - --cluster-id
+                - {{ .Values.clusterId | quote }}
+              env:
+                - name: PIQC_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.apiKeySecret.name | default (printf "%s-key" .Release.Name) }}
+                      key: {{ .Values.apiKeySecret.key }}
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}

@@ -95,6 +95,8 @@ output/
 !examples/*.yml
 !.github/**/*.yaml
 !.github/**/*.yml
+!helm/**/*.yaml
+!helm/**/*.yml
 
 # OS files
 .DS_Store
