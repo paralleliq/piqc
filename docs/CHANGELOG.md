@@ -8,6 +8,17 @@ This project adheres to [Semantic Versioning](https://semver.org/) and the [Keep
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-09-10
+
+### Added
+- Cluster-wide fragmentation facts (`cluster.totalFreeGpus`, `cluster.largestContiguousBlock`, `cluster.fragmentedNodeCount`) and per-pending-pod demand facts (`job.pendingGpuCount`, `job.pendingSinceMinutes`), folded onto each pending pod's own workload object so `fragmentation_v1`'s single-workload `when:` evaluation can see both the demand and the cluster-wide capacity picture at once.
+- `deployment.parallelismStrategy` (derived from `--tensor-parallel-size`/`--pipeline-parallel-size` launch args) and `placement.nodeCount`/`node.gpuCount` (from real pod-to-node scheduling), unblocking `tensor_parallel_cross_node_v1`.
+- Authenticated recurring scans: `--api-key` on `piqc scan` (falls back to `PIQC_API_KEY`), so the free one-shot scan can run on a schedule and actually push to a platform that requires a cluster API key, without needing the always-on agent.
+- A Helm chart for the recurring-scan install, collapsing the manual create-secret/apply-rbac/apply-cronjob steps into one `helm install`, supporting both an inline API key and a pre-existing Secret reference.
+
+### Fixed
+- `fragmentation_v1` never actually firing on real data — the cluster-wide facts above are now folded onto the pending pod's own object instead of emitted as an unreachable standalone object.
+
 ## [1.3.0] — 2026-08-01
 
 ### Added
