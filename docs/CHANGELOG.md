@@ -8,6 +8,16 @@ This project adheres to [Semantic Versioning](https://semver.org/) and the [Keep
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-09-13
+
+### Added
+- vLLM KV-transfer role (`vllm.kvRole`: `kv_producer`/`kv_consumer`/`kv_both`, from `--kv-transfer-config`), unblocking `unified_serving_overprovisioned_v1` and `unified_serving_underprovisioned_v1`, plus `vllm.enableChunkedPrefill`, `lmcache.enabled`, and `obs.promptTokens.p95`.
+- `obs.gpu.tensorActivePct`/`obs.gpu.dramActivePct`/`obs.gpu.smActivePct`, from NVIDIA DCGM profiling counters when a DCGM Exporter is discoverable (not guaranteed present — e.g. not installed by default on GKE/GCP).
+- `obs.gpu.memBandwidthUtilPct` — nvidia-smi's own `utilization.memory` (memory-bus activity), already being collected by `GPUCollector` but silently dropped before reaching a fact.
+
+### Fixed
+- Same drift bug as the 1.4.0 bump (63da34f, 7f40528): the KV-transfer-role/DCGM work and the memory-bandwidth fact landed on `main` after the 1.4.0 tag without a version bump of their own, so the published `piqc==1.4.0` wheel (and every installed copy, including `platform/services/piqc-agent`'s vendored `.venv`) predates all three facts above. Neither `unified_serving_overprovisioned_v1` nor `unified_serving_underprovisioned_v1` could actually fire against a real deployed piqc-agent until this ships.
+
 ## [1.4.0] — 2026-09-10
 
 ### Added
