@@ -23,6 +23,7 @@ from piqc.generators.piqc_generator import PIQCGenerator
 from piqc.models.modelspec import (
     CollectionMetadata,
     DataCompleteness,
+    DCGMRuntimeState,
     Endpoint,
     EngineInfo,
     GPUInfo,
@@ -58,6 +59,11 @@ def create_test_modelspec(
     gpu_memory: str = "80GB",
     gpu_utilization: int = 75,
     include_runtime: bool = False,
+    enable_chunked_prefill: bool | None = None,
+    kv_role: str | None = None,
+    lmcache_enabled: bool | None = None,
+    dcgm_tensor_active_pct: float | None = None,
+    dcgm_dram_active_pct: float | None = None,
 ) -> ModelSpec:
     """Create a test ModelSpec with configurable parameters."""
     runtime_state = None
@@ -74,6 +80,18 @@ def create_test_modelspec(
                 health_status="healthy",
                 collection_timestamp="2024-01-01T00:00:00Z",
             ),
+        )
+
+    # DCGM is framework-agnostic -- unlike vLLM's runtime_state.vllm above,
+    # it doesn't require include_runtime=True, since it isn't tied to
+    # vLLM's own API being enabled.
+    if dcgm_tensor_active_pct is not None or dcgm_dram_active_pct is not None:
+        if runtime_state is None:
+            runtime_state = RuntimeState(collection_method="dcgm-exporter")
+        runtime_state.dcgm = DCGMRuntimeState(
+            available=True,
+            tensor_active_pct=dcgm_tensor_active_pct,
+            dram_active_pct=dcgm_dram_active_pct,
         )
 
     gpus = []
@@ -120,6 +138,9 @@ def create_test_modelspec(
             tensor_parallel_size=tensor_parallel,
             pipeline_parallel_size=pipeline_parallel,
             quantization=None,
+            enable_chunked_prefill=enable_chunked_prefill,
+            kv_role=kv_role,
+            lmcache_enabled=lmcache_enabled,
         ),
         resources=ResourceInfo(
             replicas=1,
@@ -241,6 +262,105 @@ class TestFactExtraction:
             facts = data["objects"][0]["facts"]
             assert "vllm.dtype" in facts
             assert facts["vllm.dtype"]["value"] == "bfloat16"
+
+    def test_extract_vllm_enable_chunked_prefill(self) -> None:
+        """Test vllm.enableChunkedPrefill fact extraction."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(enable_chunked_prefill=True)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert "vllm.enableChunkedPrefill" in facts
+            assert facts["vllm.enableChunkedPrefill"]["value"] is True
+
+    def test_extract_vllm_kv_role(self) -> None:
+        """Test vllm.kvRole fact extraction -- the disaggregated-serving
+        topology signal the outcome prediction model and several rules
+        (unified_serving_underprovisioned_v1, disaggregated_prefill_
+        starving_decode_v1) depend on as a required, positively-confirmed
+        fact."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(kv_role="kv_both")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert "vllm.kvRole" in facts
+            assert facts["vllm.kvRole"]["value"] == "kv_both"
+
+    def test_vllm_kv_role_absent_when_not_detected(self) -> None:
+        """No fact at all when kv_role couldn't be confirmed -- absence,
+        not a guessed default like 'kv_both'."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(kv_role=None)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert "vllm.kvRole" not in facts
+
+    def test_extract_lmcache_enabled(self) -> None:
+        """Test lmcache.enabled fact extraction."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(lmcache_enabled=True)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert "lmcache.enabled" in facts
+            assert facts["lmcache.enabled"]["value"] is True
+
+    def test_extract_dcgm_tensor_and_dram_active_pct(self) -> None:
+        """Test obs.gpu.tensorActivePct / obs.gpu.dramActivePct fact
+        extraction -- the real compute-bound vs. memory-bandwidth-bound
+        split obs.gpu.utilAvgPct alone can never provide."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(
+            dcgm_tensor_active_pct=72.3, dcgm_dram_active_pct=15.8
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert facts["obs.gpu.tensorActivePct"]["value"] == 72.3
+            assert facts["obs.gpu.dramActivePct"]["value"] == 15.8
+
+    def test_dcgm_facts_absent_when_not_available(self) -> None:
+        """No DCGM Exporter found/reachable during the scan -- must be
+        silent absence, not a guessed or zeroed value."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec()  # no dcgm_* kwargs -> not available
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert "obs.gpu.tensorActivePct" not in facts
+            assert "obs.gpu.dramActivePct" not in facts
 
     def test_extract_vllm_max_model_len(self) -> None:
         """Test vllm.maxModelLen fact extraction."""

@@ -212,6 +212,37 @@ vllm_gpu_cache_usage_perc 0.45
         assert metrics.requests.waiting == 2
 
     @patch.object(VLLMAPIClient, "get_health")
+    @patch.object(VLLMAPIClient, "get_models")
+    @patch.object(VLLMAPIClient, "get_metrics_raw")
+    def test_get_runtime_metrics_prompt_tokens_p95(
+        self,
+        mock_metrics: Mock,
+        mock_models: Mock,
+        mock_health: Mock,
+    ) -> None:
+        """prompt_tokens_p95 is a prompt LENGTH distribution (tokens per
+        request), read from the same generic histogram-bucket percentile
+        machinery already used for ttft/tpot/e2e latency -- not a
+        throughput rate like prompt_tokens_per_second."""
+        mock_health.return_value = True
+        mock_models.return_value = [{"id": "llama-7b"}]
+        mock_metrics.return_value = """
+vllm_request_prompt_tokens_bucket{le="128"} 10
+vllm_request_prompt_tokens_bucket{le="256"} 50
+vllm_request_prompt_tokens_bucket{le="512"} 95
+vllm_request_prompt_tokens_bucket{le="1024"} 100
+vllm_request_prompt_tokens_bucket{le="+Inf"} 100
+vllm_request_prompt_tokens_count 100
+"""
+        client = VLLMAPIClient("http://localhost:8000")
+        metrics = client.get_runtime_metrics()
+
+        assert metrics.throughput.prompt_tokens_p95 is not None
+        # p95 of 100 samples falls between the 256 and 512 buckets
+        # (50 <= target_count=95 <= 95 boundary) -- interpolated, not exact.
+        assert 256 <= metrics.throughput.prompt_tokens_p95 <= 512
+
+    @patch.object(VLLMAPIClient, "get_health")
     def test_get_runtime_metrics_unavailable(self, mock_health: Mock) -> None:
         """Test runtime metrics when API unavailable."""
         mock_health.return_value = False

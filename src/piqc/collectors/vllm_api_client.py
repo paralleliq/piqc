@@ -55,6 +55,7 @@ class VLLMThroughputMetrics:
     generation_tokens_total: int = 0
     prompt_tokens_per_second: float = 0.0
     generation_tokens_per_second: float = 0.0
+    prompt_tokens_p95: Optional[float] = None
 
 
 @dataclass
@@ -577,6 +578,16 @@ class VLLMAPIClient:
         metrics.latency.e2e_p50 = e2e_percentiles.get('p50')
         metrics.latency.e2e_p95 = e2e_percentiles.get('p95')
         metrics.latency.e2e_p99 = e2e_percentiles.get('p99')
+
+        # Prompt LENGTH distribution (tokens per request), not a throughput
+        # rate like prompt_tokens_per_second above -- same histogram-bucket
+        # percentile machinery, applied to vLLM's own per-request prompt-size
+        # histogram instead of a latency one.
+        prompt_tokens_percentiles = parsed.get('vllm:request_prompt_tokens_percentiles', {})
+        if not prompt_tokens_percentiles:
+            prompt_tokens_percentiles = parsed.get('vllm_request_prompt_tokens_percentiles', {})
+
+        metrics.throughput.prompt_tokens_p95 = prompt_tokens_percentiles.get('p95')
 
 
 # =============================================================================

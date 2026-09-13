@@ -5,6 +5,7 @@ Extracts vLLM configuration from environment variables,
 CLI arguments, and volume mounts.
 """
 
+import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -50,7 +51,24 @@ class VLLMConfig:
     # Engine Settings
     enforce_eager: bool = False
     kv_cache_dtype: Optional[str] = None
-    
+    enable_chunked_prefill: bool = False
+
+    # Disaggregated-serving / KV-transfer settings. kv_transfer_config_raw is
+    # the raw --kv-transfer-config JSON string (vLLM's own flag for wiring up
+    # a KV connector); kv_role and kv_connector are parsed out of it by
+    # derive_kv_transfer_fields() below, not set directly from a mapping
+    # table entry, since the flag's value is a JSON blob, not a scalar.
+    kv_transfer_config_raw: Optional[str] = None
+    kv_role: Optional[str] = None
+    kv_connector: Optional[str] = None
+
+    # True only on positive evidence (an LMCache connector name in
+    # kv-transfer-config, or an LMCACHE_* env var) -- never set to False,
+    # since absence of that evidence doesn't rule out LMCache being wired up
+    # some other way this collector doesn't parse. None means "unknown," not
+    # "confirmed absent." See derive_lmcache_enabled() below.
+    lmcache_enabled: Optional[bool] = None
+
     # Detection Metadata
     detection_method: str = "unknown"
     confidence: float = 0.0
@@ -99,6 +117,8 @@ CLI_ARG_MAPPING = {
     "--swap-space": "swap_space_gb",
     "--kv-cache-dtype": "kv_cache_dtype",
     "--enforce-eager": "enforce_eager",
+    "--enable-chunked-prefill": "enable_chunked_prefill",
+    "--kv-transfer-config": "kv_transfer_config_raw",
 }
 
 
@@ -121,6 +141,65 @@ def derive_parallelism_strategy(
         return "tensor"
     if pipeline_parallel_size and pipeline_parallel_size > 1:
         return "pipeline"
+    return None
+
+
+_VALID_KV_ROLES = {"kv_producer", "kv_consumer", "kv_both"}
+
+
+def derive_kv_transfer_fields(
+    kv_transfer_config_raw: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """Parse vLLM's --kv-transfer-config flag (a JSON blob, e.g.
+    '{"kv_connector":"PyNcclConnector","kv_role":"kv_producer",...}') into
+    (kv_role, kv_connector).
+
+    Returns (None, None) on anything that isn't confidently parseable --
+    missing flag, malformed JSON, or a kv_role value outside the three vLLM
+    actually defines. A wrong topology claim is worse than no claim: several
+    rules (unified_serving_underprovisioned_v1, disaggregated_prefill_
+    starving_decode_v1, the LMCache guards) treat kv_role as a positive
+    confirmation, not an inference -- see those rules' own `when:` clauses,
+    which require `present: vllm.kvRole` rather than assuming absence means
+    unified.
+    """
+    if not kv_transfer_config_raw:
+        return None, None
+
+    try:
+        parsed = json.loads(kv_transfer_config_raw)
+    except (json.JSONDecodeError, TypeError):
+        logger.debug(f"Failed to parse --kv-transfer-config as JSON: {kv_transfer_config_raw!r}")
+        return None, None
+
+    if not isinstance(parsed, dict):
+        return None, None
+
+    kv_role = parsed.get("kv_role")
+    if kv_role not in _VALID_KV_ROLES:
+        kv_role = None
+
+    kv_connector = parsed.get("kv_connector")
+    kv_connector = kv_connector if isinstance(kv_connector, str) else None
+
+    return kv_role, kv_connector
+
+
+def derive_lmcache_enabled(
+    kv_connector: Optional[str],
+    env_vars: dict[str, str],
+) -> Optional[bool]:
+    """True only on positive evidence that LMCache is the active KV
+    connector or is otherwise configured -- never False, since the absence
+    of these two specific signals doesn't rule out LMCache being wired up
+    some other way this collector doesn't parse (e.g. a mounted config file).
+    None ("unknown") is the honest default, matching every other fact in
+    this system that would rather stay silent than guess.
+    """
+    if kv_connector and "lmcache" in kv_connector.lower():
+        return True
+    if any(key.upper().startswith("LMCACHE_") for key in env_vars):
+        return True
     return None
 
 
@@ -183,7 +262,15 @@ class VLLMCollector:
         # Infer model architecture if model name is known
         if config.model_name:
             config = self._infer_model_details(config)
-        
+
+        # Parse --kv-transfer-config (a JSON blob, can't go through the flat
+        # CLI_ARG_MAPPING like a scalar field) and derive LMCache presence
+        # from whichever of its two possible signals is available.
+        config.kv_role, config.kv_connector = derive_kv_transfer_fields(
+            config.kv_transfer_config_raw
+        )
+        config.lmcache_enabled = derive_lmcache_enabled(config.kv_connector, env_vars)
+
         return config
     
     def _parse_env_vars(self, env_vars: dict[str, str]) -> dict[str, Any]:
@@ -221,7 +308,7 @@ class VLLMCollector:
                 field_name = CLI_ARG_MAPPING[arg]
                 
                 # Check if it's a boolean flag
-                if field_name in ("trust_remote_code", "enforce_eager"):
+                if field_name in ("trust_remote_code", "enforce_eager", "enable_chunked_prefill"):
                     values[field_name] = True
                 elif i + 1 < len(args) and not args[i + 1].startswith("-"):
                     value = args[i + 1]
@@ -269,7 +356,7 @@ class VLLMCollector:
                 return None
         
         # Boolean fields
-        if field_name in ("trust_remote_code", "enforce_eager"):
+        if field_name in ("trust_remote_code", "enforce_eager", "enable_chunked_prefill"):
             return raw_value.lower() in ("true", "1", "yes")
         
         # String fields

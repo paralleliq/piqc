@@ -15,6 +15,7 @@ from typing import Optional
 from piqc import __version__
 from piqc.collectors.config_collector import ConfigCollector
 from piqc.collectors.cpu_collector import CPUCollector
+from piqc.collectors.dcgm_collector import DCGMCollector, DCGMProfilingMetrics, discover_dcgm_exporter
 from piqc.collectors.gpu_collector import GPUCollector, GPUMetrics
 from piqc.collectors.vllm_api_client import (
     KubectlExecVLLMClient,
@@ -39,6 +40,7 @@ from piqc.models.modelspec import (
     KubernetesMetadata,
     MetadataInfo,
     ModelInfo,
+    DCGMRuntimeState,
     ModelSpec,
     ResourceInfo,
     RuntimeState,
@@ -215,9 +217,32 @@ class ScanOrchestrator:
         self.vllm_collector = VLLMCollector()
         self.gpu_collector = GPUCollector(k8s_client, exec_timeout=timeout)
         self.cpu_collector = CPUCollector(k8s_client, exec_timeout=timeout)
-        
+        self.dcgm_collector = DCGMCollector(timeout=timeout)
+
         self.vllm_parser = VLLMParser()
-    
+
+        # DCGM Exporter is node/cluster-scoped, not per-deployment -- discover
+        # and scrape it at most once per scan() call and reuse the result for
+        # every deployment, rather than re-discovering per pod. None means
+        # "not attempted yet"; _get_dcgm_metrics() below sets this on first
+        # use each scan.
+        self._dcgm_metrics: Optional[DCGMProfilingMetrics] = None
+
+    def _get_dcgm_metrics(self) -> DCGMProfilingMetrics:
+        """Discover and scrape DCGM Exporter at most once per scan() call,
+        caching the result (including a negative result -- "not found" is
+        cached too, so a missing exporter doesn't trigger a fresh service
+        listing for every single deployment in the scan)."""
+        if self._dcgm_metrics is not None:
+            return self._dcgm_metrics
+
+        base_url = discover_dcgm_exporter(self.k8s_client)
+        if base_url is None:
+            self._dcgm_metrics = DCGMProfilingMetrics(available=False)
+        else:
+            self._dcgm_metrics = self.dcgm_collector.collect(base_url)
+        return self._dcgm_metrics
+
     def scan(
         self,
         namespaces: Optional[list[str]] = None,
@@ -233,7 +258,8 @@ class ScanOrchestrator:
         """
         start_time = time.time()
         result = ScanResult()
-        
+        self._dcgm_metrics = None  # re-discover fresh for this scan() call
+
         # Get namespaces to scan
         if namespaces:
             target_namespaces = namespaces
@@ -609,6 +635,7 @@ class ScanOrchestrator:
                                     prompt_tokens_per_sec=vllm_metrics.throughput.prompt_tokens_per_second,
                                     generation_tokens_per_sec=vllm_metrics.throughput.generation_tokens_per_second,
                                     prompt_tokens_total=vllm_metrics.throughput.prompt_tokens_total,
+                                    prompt_tokens_p95=vllm_metrics.throughput.prompt_tokens_p95,
                                     generation_tokens_total=vllm_metrics.throughput.generation_tokens_total,
                                     gpu_cache_usage_percent=vllm_metrics.cache.gpu_cache_usage_percent,
                                     cpu_cache_usage_percent=vllm_metrics.cache.cpu_cache_usage_percent,
@@ -624,7 +651,26 @@ class ScanOrchestrator:
                         warnings.append(f"{deployment.name}: Could not discover vLLM service endpoint")
                 except Exception as e:
                     warnings.append(f"{deployment.name}: Runtime metrics collection failed - {e}")
-        
+
+        # DCGM profiling metrics -- framework-agnostic (unlike the vLLM
+        # block above), attempted for any GPU workload when runtime
+        # collection is enabled. Discovered/scraped at most once per
+        # scan() call via _get_dcgm_metrics()'s cache; here we just attach
+        # whatever it found (or didn't) to this deployment's runtime_state.
+        if self.enable_runtime_collection:
+            dcgm_metrics = self._get_dcgm_metrics()
+            if dcgm_metrics.available:
+                dcgm_state = DCGMRuntimeState(
+                    available=True,
+                    tensor_active_pct=dcgm_metrics.tensor_active_pct,
+                    dram_active_pct=dcgm_metrics.dram_active_pct,
+                    sm_active_pct=dcgm_metrics.sm_active_pct,
+                )
+                if runtime_state is None:
+                    runtime_state = RuntimeState(collection_method="dcgm-exporter", dcgm=dcgm_state)
+                else:
+                    runtime_state.dcgm = dcgm_state
+
         # Calculate duration
         duration_seconds = _time.time() - start_time
         if duration_seconds < 1:

@@ -515,6 +515,48 @@ class PIQCGenerator:
                 observed_at=self._timestamp,
             )
 
+        # vllm.enableChunkedPrefill (optional extended)
+        if inference.enable_chunked_prefill is not None:
+            facts["vllm.enableChunkedPrefill"] = FactValue(
+                value=inference.enable_chunked_prefill,
+                source=Source(
+                    type=SourceType.K8S_API,
+                    method="container_args",
+                ),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            )
+
+        # vllm.kvRole (optional extended) -- disaggregated-serving topology,
+        # confirmed from --kv-transfer-config, never inferred from its
+        # absence. See vllm_collector.derive_kv_transfer_fields.
+        if inference.kv_role is not None:
+            facts["vllm.kvRole"] = FactValue(
+                value=inference.kv_role,
+                source=Source(
+                    type=SourceType.K8S_API,
+                    method="container_args",
+                ),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            )
+
+        # lmcache.enabled (optional extended) -- True only on positive
+        # evidence (LMCache KV connector or an LMCACHE_* env var); never
+        # emitted as False, since absence of these two signals doesn't rule
+        # out LMCache being configured some other way. See
+        # vllm_collector.derive_lmcache_enabled.
+        if inference.lmcache_enabled is not None:
+            facts["lmcache.enabled"] = FactValue(
+                value=inference.lmcache_enabled,
+                source=Source(
+                    type=SourceType.K8S_API,
+                    method="container_args",
+                ),
+                data_confidence=Confidence.MEDIUM,
+                observed_at=self._timestamp,
+            )
+
         # vllm.gpuMemoryUtilization (optional extended)
         if spec.resources.gpu_memory_utilization:
             facts["vllm.gpuMemoryUtilization"] = FactValue(
@@ -653,6 +695,49 @@ class PIQCGenerator:
                             type=SourceType.POD_EXEC,
                             method="nvidia-smi",
                             ref=gpu.pod_name,
+                        ),
+                        data_confidence=Confidence.MEDIUM,
+                        observed_at=self._timestamp,
+                        units="%",
+                    )
+
+            # obs.gpu.tensorActivePct / obs.gpu.dramActivePct (optional
+            # extended) -- the real compute-bound vs. memory-bandwidth-bound
+            # split obs.gpu.utilAvgPct above can never provide on its own
+            # (see docs/ROADMAP.md's "obs.gpu.computeUtilAvgPct Doesn't
+            # Exist in piqc" in the platform repo). Only present when a
+            # DCGM Exporter was actually found and reachable during this
+            # scan -- see dcgm_collector.py's "if it is available" design.
+            dcgm = spec.runtime_state.dcgm if spec.runtime_state else None
+            if dcgm and dcgm.available:
+                if dcgm.tensor_active_pct is not None:
+                    facts["obs.gpu.tensorActivePct"] = FactValue(
+                        value=dcgm.tensor_active_pct,
+                        source=Source(
+                            type=SourceType.HTTP_METRICS,
+                            method="GET /metrics (DCGM Exporter)",
+                        ),
+                        data_confidence=Confidence.HIGH,
+                        observed_at=self._timestamp,
+                        units="%",
+                    )
+                if dcgm.dram_active_pct is not None:
+                    facts["obs.gpu.dramActivePct"] = FactValue(
+                        value=dcgm.dram_active_pct,
+                        source=Source(
+                            type=SourceType.HTTP_METRICS,
+                            method="GET /metrics (DCGM Exporter)",
+                        ),
+                        data_confidence=Confidence.HIGH,
+                        observed_at=self._timestamp,
+                        units="%",
+                    )
+                if dcgm.sm_active_pct is not None:
+                    facts["obs.gpu.smActivePct"] = FactValue(
+                        value=dcgm.sm_active_pct,
+                        source=Source(
+                            type=SourceType.HTTP_METRICS,
+                            method="GET /metrics (DCGM Exporter)",
                         ),
                         data_confidence=Confidence.MEDIUM,
                         observed_at=self._timestamp,
@@ -820,6 +905,21 @@ class PIQCGenerator:
                     data_confidence=Confidence.MEDIUM,
                     observed_at=vllm.collection_timestamp or self._timestamp,
                     units="ms",
+                )
+
+            # obs.promptTokens.p95 (prompt LENGTH distribution across
+            # requests, not a throughput rate -- see VLLMThroughputMetrics.
+            # prompt_tokens_p95's own docstring)
+            if vllm.prompt_tokens_p95 is not None:
+                facts["obs.promptTokens.p95"] = FactValue(
+                    value=round(vllm.prompt_tokens_p95, 1),
+                    source=Source(
+                        type=SourceType.HTTP_METRICS,
+                        method="GET /metrics",
+                    ),
+                    data_confidence=Confidence.MEDIUM,
+                    observed_at=vllm.collection_timestamp or self._timestamp,
+                    units="tokens",
                 )
 
             # obs.tps.avg (Average Tokens Per Second throughput)

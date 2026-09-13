@@ -129,6 +129,24 @@ class InferenceConfig(BaseModel):
         alias="pipelineParallelSize",
         description="Pipeline parallelism",
     )
+    enable_chunked_prefill: Optional[bool] = Field(
+        None,
+        alias="enableChunkedPrefill",
+        description="Whether chunked prefill is enabled (--enable-chunked-prefill)",
+    )
+    kv_role: Optional[str] = Field(
+        None,
+        alias="kvRole",
+        description="Disaggregated-serving KV role from --kv-transfer-config: "
+        "kv_producer, kv_consumer, or kv_both. None means not confidently "
+        "detected, not 'unified' -- see vllm_collector.derive_kv_transfer_fields.",
+    )
+    lmcache_enabled: Optional[bool] = Field(
+        None,
+        alias="lmcacheEnabled",
+        description="True only on positive evidence (LMCache KV connector or "
+        "an LMCACHE_* env var). None means unknown, never asserted False.",
+    )
 
 
 class GPUInfo(BaseModel):
@@ -284,6 +302,13 @@ class VLLMRuntimeState(BaseModel):
     prompt_tokens_per_sec: Optional[float] = Field(
         None, alias="promptTokensPerSec", description="Prompt token throughput"
     )
+    prompt_tokens_p95: Optional[float] = Field(
+        None,
+        alias="promptTokensP95",
+        description="p95 of the vllm:request_prompt_tokens histogram -- prompt "
+        "LENGTH distribution across requests, not a throughput rate like "
+        "prompt_tokens_per_sec above.",
+    )
     generation_tokens_per_sec: Optional[float] = Field(
         None, alias="generationTokensPerSec", description="Generation token throughput"
     )
@@ -313,12 +338,47 @@ class VLLMRuntimeState(BaseModel):
     )
 
 
+class DCGMRuntimeState(BaseModel):
+    """NVIDIA DCGM Exporter profiling counters -- the only source of a real
+    compute-bound vs. memory-bandwidth-bound utilization split (nvidia-smi's
+    own utilization.gpu can't distinguish them). Framework-agnostic, unlike
+    VLLMRuntimeState -- applies to any GPU workload, not just vLLM.
+    Node/cluster-scoped: DCGM Exporter isn't tied to one workload's pod, so
+    these are an average across whichever GPUs the discovered exporter
+    reports on, not this specific workload's own GPU in isolation.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    available: bool = Field(
+        False, description="Whether a DCGM Exporter was found and reachable"
+    )
+    tensor_active_pct: Optional[float] = Field(
+        None,
+        alias="tensorActivePct",
+        description="DCGM_FI_PROF_PIPE_TENSOR_ACTIVE -- the real compute-bound signal",
+    )
+    dram_active_pct: Optional[float] = Field(
+        None,
+        alias="dramActivePct",
+        description="DCGM_FI_PROF_DRAM_ACTIVE -- the real memory-bandwidth-bound signal",
+    )
+    sm_active_pct: Optional[float] = Field(
+        None,
+        alias="smActivePct",
+        description="DCGM_FI_PROF_SM_ACTIVE -- finer-grained equivalent of nvidia-smi's utilization.gpu",
+    )
+
+
 class RuntimeState(BaseModel):
     """Runtime state information from API endpoints."""
 
     model_config = ConfigDict(populate_by_name=True)
 
     vllm: Optional[VLLMRuntimeState] = Field(None, description="vLLM-specific runtime state")
+    dcgm: Optional[DCGMRuntimeState] = Field(
+        None, description="DCGM Exporter profiling state, if one was found"
+    )
     collection_method: str = Field(
         "kubernetes-only",
         alias="collectionMethod",

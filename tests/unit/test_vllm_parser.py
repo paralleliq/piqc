@@ -130,11 +130,72 @@ class TestVLLMCollector:
     def test_empty_inputs(self) -> None:
         """Test handling of empty inputs."""
         collector = VLLMCollector()
-        
+
         config = collector.collect({}, [])
-        
+
         assert config.model_name is None
         assert config.confidence == 0.0
+
+    def test_parse_enable_chunked_prefill(self) -> None:
+        """--enable-chunked-prefill is a boolean flag, same shape as
+        --enforce-eager above."""
+        collector = VLLMCollector()
+
+        config = collector.collect({}, ["--model", "test-model", "--enable-chunked-prefill"])
+
+        assert config.enable_chunked_prefill is True
+
+    def test_parse_kv_transfer_config_producer(self) -> None:
+        """--kv-transfer-config is a JSON blob; kv_role/kv_connector are
+        parsed out of it, not copied as a scalar."""
+        collector = VLLMCollector()
+        kv_config = '{"kv_connector":"PyNcclConnector","kv_role":"kv_producer","kv_rank":0,"kv_parallel_size":2}'
+
+        config = collector.collect({}, ["--model", "test-model", "--kv-transfer-config", kv_config])
+
+        assert config.kv_role == "kv_producer"
+        assert config.kv_connector == "PyNcclConnector"
+        assert config.lmcache_enabled is None  # PyNcclConnector isn't LMCache
+
+    def test_parse_kv_transfer_config_lmcache_connector(self) -> None:
+        """lmcache_enabled is derived from the connector name inside the
+        same --kv-transfer-config JSON, not a separate flag."""
+        collector = VLLMCollector()
+        kv_config = '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_consumer"}'
+
+        config = collector.collect({}, ["--model", "test-model", "--kv-transfer-config", kv_config])
+
+        assert config.kv_role == "kv_consumer"
+        assert config.lmcache_enabled is True
+
+    def test_lmcache_enabled_from_env_var(self) -> None:
+        """The other positive-evidence path for LMCache: an LMCACHE_* env
+        var, independent of the KV connector name."""
+        collector = VLLMCollector()
+
+        config = collector.collect({"LMCACHE_CONFIG_FILE": "/etc/lmcache.yaml"}, ["--model", "test-model"])
+
+        assert config.lmcache_enabled is True
+
+    def test_malformed_kv_transfer_config_stays_unknown(self) -> None:
+        """Malformed JSON must never be guessed at -- kv_role/kv_connector
+        stay None, same as if the flag were absent entirely."""
+        collector = VLLMCollector()
+
+        config = collector.collect({}, ["--model", "test-model", "--kv-transfer-config", "{not valid json"])
+
+        assert config.kv_role is None
+        assert config.kv_connector is None
+
+    def test_unrecognized_kv_role_value_stays_unknown(self) -> None:
+        """A kv_role value outside vLLM's own three real values is treated
+        as unparseable, not passed through -- see _VALID_KV_ROLES."""
+        collector = VLLMCollector()
+        kv_config = '{"kv_connector":"SomeConnector","kv_role":"not_a_real_role"}'
+
+        config = collector.collect({}, ["--model", "test-model", "--kv-transfer-config", kv_config])
+
+        assert config.kv_role is None
 
 
 class TestVLLMParser:
@@ -175,7 +236,25 @@ class TestVLLMParser:
         assert config.quantization == "gptq"
         assert config.max_model_len == 4096
         assert config.tensor_parallel_size == 4
-    
+
+    def test_parse_inference_config_carries_kv_transfer_fields(self) -> None:
+        """enable_chunked_prefill/kv_role/lmcache_enabled must survive the
+        VLLMConfig -> InferenceConfig conversion, same as every other field
+        this test class already checks."""
+        parser = VLLMParser()
+
+        vllm_config = VLLMConfig(
+            enable_chunked_prefill=True,
+            kv_role="kv_both",
+            lmcache_enabled=True,
+        )
+
+        config = parser.parse_inference_config(vllm_config)
+
+        assert config.enable_chunked_prefill is True
+        assert config.kv_role == "kv_both"
+        assert config.lmcache_enabled is True
+
     def test_normalize_precision(self) -> None:
         """Test precision normalization."""
         parser = VLLMParser()
