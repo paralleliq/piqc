@@ -166,6 +166,19 @@ class GPUInfo(BaseModel):
     )
     temperature: Optional[int] = Field(None, description="GPU temperature in Celsius")
     power_draw: Optional[int] = Field(None, alias="powerDraw", description="Power draw in Watts")
+    memory_bandwidth_util_pct: Optional[int] = Field(
+        None,
+        alias="memoryBandwidthUtilPct",
+        ge=0,
+        le=100,
+        description="nvidia-smi's utilization.memory -- percent of time the "
+        "memory bus was actively read/written. A real, if coarse, signal "
+        "distinct from `utilization` above (SM/kernel-active time) and from "
+        "memory_used/memory_total (capacity occupied, not bus activity). "
+        "Not as precise as NVIDIA DCGM's DRAM_ACTIVE profiling counter, but "
+        "available everywhere nvidia-smi is, with no extra cluster "
+        "infrastructure required.",
+    )
     node: Optional[str] = Field(None, description="Kubernetes node name")
     pod_name: Optional[str] = Field(None, alias="podName", description="Pod name")
 

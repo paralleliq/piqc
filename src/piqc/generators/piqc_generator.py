@@ -701,6 +701,26 @@ class PIQCGenerator:
                         units="%",
                     )
 
+            # obs.gpu.memBandwidthUtilPct (optional extended) -- nvidia-smi's
+            # OWN utilization.memory column, already collected in the same
+            # query as obs.gpu.utilAvgPct above but never emitted as a fact
+            # until now. A real, if coarser-than-DCGM, memory-bus-activity
+            # signal -- distinct from obs.gpu.memUtilAvgPct right above
+            # (that one is capacity occupied, this one is bus activity) --
+            # available everywhere nvidia-smi is, no DCGM Exporter required.
+            if gpu.memory_bandwidth_util_pct is not None:
+                facts["obs.gpu.memBandwidthUtilPct"] = FactValue(
+                    value=gpu.memory_bandwidth_util_pct,
+                    source=Source(
+                        type=SourceType.POD_EXEC,
+                        method="nvidia-smi",
+                        ref=gpu.pod_name,
+                    ),
+                    data_confidence=Confidence.MEDIUM,
+                    observed_at=self._timestamp,
+                    units="%",
+                )
+
             # obs.gpu.tensorActivePct / obs.gpu.dramActivePct (optional
             # extended) -- the real compute-bound vs. memory-bandwidth-bound
             # split obs.gpu.utilAvgPct above can never provide on its own

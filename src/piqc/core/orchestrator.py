@@ -762,6 +762,7 @@ class ScanOrchestrator:
                 utilization=m.utilization_percent,
                 temperature=m.temperature_celsius,
                 power_draw=m.power_draw_watts,
+                memory_bandwidth_util_pct=m.memory_utilization_percent,
                 pod_name=pod_name,
             )
             for m in metrics

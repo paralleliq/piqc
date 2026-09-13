@@ -6,6 +6,11 @@ __pycache__/
 # C extensions
 *.so
 
+# piqc is Poetry-managed (see pyproject.toml) -- this repo has no uv.lock
+# of its own; one only appears from `uv run --with ...` ephemeral test
+# invocations and shouldn't be committed.
+uv.lock
+
 # Distribution / packaging
 .Python
 build/

@@ -58,6 +58,7 @@ def create_test_modelspec(
     gpu_type: str = "NVIDIA A100-SXM4-80GB",
     gpu_memory: str = "80GB",
     gpu_utilization: int = 75,
+    gpu_memory_bandwidth_util_pct: int | None = None,
     include_runtime: bool = False,
     enable_chunked_prefill: bool | None = None,
     kv_role: str | None = None,
@@ -103,6 +104,7 @@ def create_test_modelspec(
                 memory_total=gpu_memory,
                 memory_used="60GB",
                 utilization=gpu_utilization,
+                memory_bandwidth_util_pct=gpu_memory_bandwidth_util_pct,
                 temperature=65,
                 power_draw=250,
                 pod_name=f"{name}-pod-{i}",
@@ -436,6 +438,40 @@ class TestFactExtraction:
             facts = data["objects"][0]["facts"]
             assert facts["obs.gpu.utilAvgPct"]["value"] == 85
             assert facts["obs.gpu.utilAvgPct"]["units"] == "%"
+
+    def test_extract_gpu_memory_bandwidth_util_pct(self) -> None:
+        """Test obs.gpu.memBandwidthUtilPct fact extraction -- nvidia-smi's
+        own utilization.memory column, distinct from both
+        obs.gpu.utilAvgPct (SM/kernel-active) and obs.gpu.memUtilAvgPct
+        (capacity occupied, not bus activity)."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(gpu_memory_bandwidth_util_pct=22)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert facts["obs.gpu.memBandwidthUtilPct"]["value"] == 22
+            assert facts["obs.gpu.memBandwidthUtilPct"]["units"] == "%"
+
+    def test_gpu_memory_bandwidth_util_pct_absent_when_not_collected(self) -> None:
+        """nvidia-smi returned [N/A] for utilization.memory (or the field
+        was never populated) -- must be silent absence, not a zeroed or
+        guessed value."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec()  # gpu_memory_bandwidth_util_pct defaults to None
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert "obs.gpu.memBandwidthUtilPct" not in facts
 
 
 class TestExtendedFacts:
