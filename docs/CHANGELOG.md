@@ -8,6 +8,11 @@ This project adheres to [Semantic Versioning](https://semver.org/) and the [Keep
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-09-14
+
+### Added
+- `obs.vllm.promptTokensPerSec` -- the prefill-side counterpart to the already-emitted `obs.vllm.tokensPerSec`. `VLLMRuntimeState.prompt_tokens_per_sec` was already collected end-to-end (the Prometheus scrape of `vllm:avg_prompt_throughput_toks_per_s` through to the runtime-state model) but never turned into a fact -- same "collected, never emitted" gap as `obs.gpu.memBandwidthUtilPct`. Enables a platform-side zero-config unified-serving inference: a pod showing sustained nonzero prompt AND generation throughput at once is doing both prefill and decode itself, without needing `--kv-transfer-config`.
+
 ## [1.5.0] — 2026-09-13
 
 ### Added
