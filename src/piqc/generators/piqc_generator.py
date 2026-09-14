@@ -835,6 +835,29 @@ class PIQCGenerator:
                     units="tokens/s",
                 )
 
+            # obs.vllm.promptTokensPerSec -- the prefill-side counterpart to
+            # tokensPerSec above. VLLMRuntimeState.prompt_tokens_per_sec was
+            # already collected end-to-end (vllm_api_client.py's Prometheus
+            # scrape of vllm:avg_prompt_throughput_toks_per_s -> orchestrator.py
+            # -> this field) but never emitted as a fact until now -- same
+            # "collected, never emitted" gap as obs.gpu.memBandwidthUtilPct
+            # (2026-09-13). Added 2026-09-14 for a zero-config unified-serving
+            # inference heuristic: sustained nonzero prompt AND generation
+            # throughput on the same pod, with no --kv-transfer-config set at
+            # all, is real behavioral evidence it's doing both prefill and
+            # decode -- see platform's advisor_integration.py.
+            if vllm.prompt_tokens_per_sec:
+                facts["obs.vllm.promptTokensPerSec"] = FactValue(
+                    value=vllm.prompt_tokens_per_sec,
+                    source=Source(
+                        type=SourceType.HTTP_METRICS,
+                        method="GET /metrics",
+                    ),
+                    data_confidence=Confidence.MEDIUM,
+                    observed_at=vllm.collection_timestamp or self._timestamp,
+                    units="tokens/s",
+                )
+
             # obs.vllm.requestsRunning (extended)
             if vllm.requests_running is not None:
                 facts["obs.vllm.requestsRunning"] = FactValue(

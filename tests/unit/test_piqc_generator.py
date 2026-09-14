@@ -77,6 +77,7 @@ def create_test_modelspec(
                 requests_waiting=2,
                 gpu_cache_usage_percent=45.5,
                 generation_tokens_per_sec=150.5,
+                prompt_tokens_per_sec=45.2,
                 api_available=True,
                 health_status="healthy",
                 collection_timestamp="2024-01-01T00:00:00Z",
@@ -551,6 +552,26 @@ class TestRuntimeMetrics:
             facts = data["objects"][0]["facts"]
             assert facts["obs.vllm.tokensPerSec"]["value"] == 150.5
             assert facts["obs.vllm.tokensPerSec"]["units"] == "tokens/s"
+
+    def test_extract_vllm_prompt_tokens_per_sec(self) -> None:
+        """Test obs.vllm.promptTokensPerSec from runtime state -- the
+        prefill-side counterpart to obs.vllm.tokensPerSec, added 2026-09-14
+        for the zero-config unified-serving inference heuristic (sustained
+        nonzero prompt AND generation throughput on the same pod, with no
+        --kv-transfer-config set, is real evidence of doing both prefill
+        and decode)."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(include_runtime=True)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert facts["obs.vllm.promptTokensPerSec"]["value"] == 45.2
+            assert facts["obs.vllm.promptTokensPerSec"]["units"] == "tokens/s"
 
     def test_extract_vllm_requests_running(self) -> None:
         """Test obs.vllm.requestsRunning from runtime state."""
