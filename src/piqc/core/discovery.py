@@ -608,7 +608,17 @@ class DeploymentDiscovery:
         this workload's config actually look like" for platform-side
         storage/display, independent of which specific facts today's rules
         happen to reference (those stay narrow, computed separately above).
+
+        Also carries the pod's own labels under "podLabels" -- not part of
+        pod.spec itself (sanitize_for_serialization(pod.spec) alone never
+        includes them), but needed downstream to reconstruct a coherent
+        Deployment manifest from this snapshot: spec.selector.matchLabels
+        and the pod template's own metadata.labels both need to match the
+        original, or a rendered "apply this" manifest would be structurally
+        invalid even though every field in it were individually correct.
         """
         if not pod.spec:
             return None
-        return ApiClient().sanitize_for_serialization(pod.spec)
+        snapshot = ApiClient().sanitize_for_serialization(pod.spec)
+        snapshot["podLabels"] = dict(pod.metadata.labels or {}) if pod.metadata else {}
+        return snapshot

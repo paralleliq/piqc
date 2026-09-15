@@ -207,6 +207,7 @@ class TestDeploymentDiscovery:
             name="vllm-server-abc123",
             namespace="inference",
             image="vllm/vllm-openai:v0.2.0",
+            labels={"app": "vllm-server"},
             tolerations=[V1Toleration(key="nvidia.com/gpu", operator="Exists")],
             node_selector={"gpu-tier": "a100"},
             service_account_name="vllm-runner",
@@ -220,6 +221,24 @@ class TestDeploymentDiscovery:
         assert snapshot["serviceAccountName"] == "vllm-runner"
         assert snapshot["nodeSelector"] == {"gpu-tier": "a100"}
         assert snapshot["tolerations"][0]["key"] == "nvidia.com/gpu"
+        # podLabels isn't part of pod.spec at all -- carried separately so a
+        # rendered manifest downstream can reconstruct spec.selector.matchLabels
+        # / the pod template's own labels, not just the pod's own runtime spec.
+        assert snapshot["podLabels"] == {"app": "vllm-server"}
+
+    def test_pod_spec_snapshot_pod_labels_empty_when_pod_has_none(self) -> None:
+        """No labels on the pod -- podLabels should be {}, not missing or
+        None, so downstream code can always do snapshot["podLabels"] without
+        a None-check."""
+        discovery = DeploymentDiscovery()
+
+        pod = create_mock_pod(image="vllm/vllm-openai:v0.2.0")
+
+        deployment = discovery.analyze_pod(pod)
+
+        assert deployment is not None
+        assert deployment.pod_spec_snapshot is not None
+        assert deployment.pod_spec_snapshot["podLabels"] == {}
 
     def test_analyze_non_inference_pod_has_no_snapshot(self) -> None:
         """Snapshot capture only applies to pods that pass the same
