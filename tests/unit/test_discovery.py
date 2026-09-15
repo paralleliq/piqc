@@ -7,7 +7,15 @@ Tests framework detection and confidence scoring.
 import pytest
 from unittest.mock import MagicMock
 
-from kubernetes.client import V1Pod, V1ObjectMeta, V1PodSpec, V1Container, V1EnvVar
+from kubernetes.client import (
+    V1Pod,
+    V1ObjectMeta,
+    V1PodSpec,
+    V1Container,
+    V1EnvVar,
+    V1Toleration,
+    V1Volume,
+)
 
 from piqc.core.discovery import (
     FrameworkDetector,
@@ -22,19 +30,23 @@ def create_mock_pod(
     env_vars: dict | None = None,
     args: list | None = None,
     labels: dict | None = None,
+    tolerations: list[V1Toleration] | None = None,
+    volumes: list[V1Volume] | None = None,
+    node_selector: dict | None = None,
+    service_account_name: str | None = None,
 ) -> V1Pod:
     """Create a mock V1Pod for testing."""
     env_list = None
     if env_vars:
         env_list = [V1EnvVar(name=k, value=v) for k, v in env_vars.items()]
-    
+
     container = V1Container(
         name="main",
         image=image,
         env=env_list,
         args=args,
     )
-    
+
     return V1Pod(
         metadata=V1ObjectMeta(
             name=name,
@@ -43,6 +55,10 @@ def create_mock_pod(
         ),
         spec=V1PodSpec(
             containers=[container],
+            tolerations=tolerations,
+            volumes=volumes,
+            node_selector=node_selector,
+            service_account_name=service_account_name,
         ),
     )
 
@@ -172,14 +188,49 @@ class TestDeploymentDiscovery:
     def test_analyze_non_inference_pod(self) -> None:
         """Test analyzing a non-inference pod returns None."""
         discovery = DeploymentDiscovery()
-        
+
         pod = create_mock_pod(
             image="nginx:latest",
         )
-        
+
         deployment = discovery.analyze_pod(pod)
-        
+
         assert deployment is None
+
+    def test_analyze_pod_captures_full_spec_snapshot(self) -> None:
+        """pod_spec_snapshot should carry fields the narrow fact set above
+        never captures -- tolerations, nodeSelector, serviceAccountName --
+        confirming it's not just a duplicate of the existing extraction."""
+        discovery = DeploymentDiscovery()
+
+        pod = create_mock_pod(
+            name="vllm-server-abc123",
+            namespace="inference",
+            image="vllm/vllm-openai:v0.2.0",
+            tolerations=[V1Toleration(key="nvidia.com/gpu", operator="Exists")],
+            node_selector={"gpu-tier": "a100"},
+            service_account_name="vllm-runner",
+        )
+
+        deployment = discovery.analyze_pod(pod)
+
+        assert deployment is not None
+        snapshot = deployment.pod_spec_snapshot
+        assert snapshot is not None
+        assert snapshot["serviceAccountName"] == "vllm-runner"
+        assert snapshot["nodeSelector"] == {"gpu-tier": "a100"}
+        assert snapshot["tolerations"][0]["key"] == "nvidia.com/gpu"
+
+    def test_analyze_non_inference_pod_has_no_snapshot(self) -> None:
+        """Snapshot capture only applies to pods that pass the same
+        framework/confidence gate as everything else on InferenceDeployment
+        -- there's no InferenceDeployment at all to hang a snapshot on
+        otherwise."""
+        discovery = DeploymentDiscovery()
+
+        pod = create_mock_pod(image="nginx:latest")
+
+        assert discovery.analyze_pod(pod) is None
     
     def test_group_deployments(self) -> None:
         """Test grouping pods by deployment."""

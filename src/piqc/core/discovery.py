@@ -10,7 +10,7 @@ import re
 from datetime import datetime
 from typing import Optional
 
-from kubernetes.client import V1Pod, V1Container
+from kubernetes.client import ApiClient, V1Pod, V1Container
 
 from piqc.models.modelspec import InferenceDeployment
 from piqc.utils.logger import get_logger
@@ -433,7 +433,14 @@ class DeploymentDiscovery:
         gpu_count = self._get_gpu_count(pod)
         cpu_request = self._get_resource_request(pod, "cpu")
         memory_request = self._get_resource_request(pod, "memory")
-        
+
+        # Full spec snapshot -- tolerations, volumes, nodeSelector,
+        # serviceAccountName, full resource limits, everything the narrower
+        # fields above don't carry. Only captured for pods that already
+        # passed the framework/confidence gate above, same eligibility as
+        # every other field on this InferenceDeployment.
+        pod_spec_snapshot = self._get_pod_spec_snapshot(pod)
+
         return InferenceDeployment(
             name=deployment_name,
             namespace=namespace,
@@ -451,6 +458,7 @@ class DeploymentDiscovery:
             gpu_count=gpu_count,
             cpu_request=cpu_request,
             memory_request=memory_request,
+            pod_spec_snapshot=pod_spec_snapshot,
         )
     
     def group_deployments(
@@ -585,9 +593,22 @@ class DeploymentDiscovery:
         """Get resource request value for a pod."""
         if not pod.spec or not pod.spec.containers:
             return None
-        
+
         container = pod.spec.containers[0]
         if not container.resources or not container.resources.requests:
             return None
-        
+
         return container.resources.requests.get(resource_type)
+
+    def _get_pod_spec_snapshot(self, pod: V1Pod) -> Optional[dict]:
+        """Serialize the pod's spec in full -- tolerations, volumes,
+        nodeSelector, serviceAccountName, full container resource
+        limits/requests, everything. Deliberately the raw spec rather than
+        another hand-picked field list: this is meant to answer "what does
+        this workload's config actually look like" for platform-side
+        storage/display, independent of which specific facts today's rules
+        happen to reference (those stay narrow, computed separately above).
+        """
+        if not pod.spec:
+            return None
+        return ApiClient().sanitize_for_serialization(pod.spec)

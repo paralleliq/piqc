@@ -121,6 +121,12 @@ class WorkloadObject(BaseModel):
         default_factory=dict,
         description="Fact map keyed by canonical fact names",
     )
+    pod_spec_snapshot: Optional[dict[str, Any]] = Field(
+        None,
+        alias="podSpecSnapshot",
+        description="Full sanitized pod spec as of this scan, for platform-"
+        "side config display/rollback -- not a fact, not used by rules.",
+    )
 
 
 class FactError(BaseModel):

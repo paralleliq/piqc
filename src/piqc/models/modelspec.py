@@ -260,6 +260,14 @@ class KubernetesMetadata(BaseModel):
     )
     image: str = Field(..., description="Container image")
     image_tag: Optional[str] = Field(None, alias="imageTag", description="Image tag")
+    pod_spec_snapshot: Optional[dict[str, Any]] = Field(
+        None,
+        alias="podSpecSnapshot",
+        description="Full sanitized pod spec (tolerations, volumes, "
+        "nodeSelector, serviceAccountName, resource limits) as of this scan "
+        "-- for platform-side config display/rollback, not used by any fact "
+        "or rule.",
+    )
 
 
 class DataCompleteness(BaseModel):
@@ -519,3 +527,9 @@ class InferenceDeployment(BaseModel):
     gpu_count: int = Field(0, description="Number of GPUs requested")
     cpu_request: Optional[str] = Field(None, description="CPU request")
     memory_request: Optional[str] = Field(None, description="Memory request")
+
+    # Full spec, separate from the narrow fields above -- see
+    # DeploymentDiscovery._get_pod_spec_snapshot for what it contains.
+    pod_spec_snapshot: Optional[dict[str, Any]] = Field(
+        None, description="Full sanitized pod spec as of this scan"
+    )
