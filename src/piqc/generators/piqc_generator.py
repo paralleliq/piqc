@@ -333,6 +333,7 @@ class PIQCGenerator:
             images=[spec.kubernetes.image] if spec.kubernetes.image else None,
             pods=None,  # Could extract from GPUInfo.pod_name
             facts=facts,
+            pod_spec_snapshot=spec.kubernetes.pod_spec_snapshot,
         )
 
     def _extract_runtime_facts(

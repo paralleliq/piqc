@@ -704,6 +704,7 @@ class ScanOrchestrator:
                 creation_timestamp=deployment.created_at.isoformat() if deployment.created_at else None,
                 image=image,
                 image_tag=image_tag,
+                pod_spec_snapshot=deployment.pod_spec_snapshot,
             ),
             runtime_state=runtime_state,
             collection=CollectionMetadata(

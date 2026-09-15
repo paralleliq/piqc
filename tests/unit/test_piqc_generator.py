@@ -65,6 +65,7 @@ def create_test_modelspec(
     lmcache_enabled: bool | None = None,
     dcgm_tensor_active_pct: float | None = None,
     dcgm_dram_active_pct: float | None = None,
+    pod_spec_snapshot: dict | None = None,
 ) -> ModelSpec:
     """Create a test ModelSpec with configurable parameters."""
     runtime_state = None
@@ -159,6 +160,7 @@ def create_test_modelspec(
             cluster_name="test-cluster",
             image="vllm/vllm-openai:v0.4.0",
             image_tag="v0.4.0",
+            pod_spec_snapshot=pod_spec_snapshot,
         ),
         runtime_state=runtime_state,
         collection=CollectionMetadata(
@@ -230,6 +232,42 @@ class TestPIQCGenerator:
 
             assert data["cluster"]["context"] == "gke_project_zone_cluster"
             assert data["cluster"]["name"] == "production"
+
+    def test_generate_includes_pod_spec_snapshot(self) -> None:
+        """pod_spec_snapshot flows through kubernetes.pod_spec_snapshot on
+        the ModelSpec, all the way to the workload object's podSpecSnapshot
+        key in the generated bundle -- separate from the facts dict, since
+        it isn't a fact any rule reads."""
+        generator = PIQCGenerator()
+        snapshot = {
+            "serviceAccountName": "vllm-runner",
+            "nodeSelector": {"gpu-tier": "a100"},
+            "tolerations": [{"key": "nvidia.com/gpu", "operator": "Exists"}],
+        }
+        modelspec = create_test_modelspec(pod_spec_snapshot=snapshot)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            assert data["objects"][0]["podSpecSnapshot"] == snapshot
+
+    def test_generate_omits_pod_spec_snapshot_when_absent(self) -> None:
+        """No snapshot captured (e.g. an older agent, or a pod whose spec
+        was empty) -- key should be omitted, not present with a null value,
+        matching PIQCBundle.to_dict()'s exclude_none=True everywhere else."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(pod_spec_snapshot=None)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            assert "podSpecSnapshot" not in data["objects"][0]
 
 
 class TestFactExtraction:
