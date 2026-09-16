@@ -62,6 +62,7 @@ def create_test_modelspec(
     include_runtime: bool = False,
     enable_chunked_prefill: bool | None = None,
     kv_role: str | None = None,
+    kv_connector: str | None = None,
     lmcache_enabled: bool | None = None,
     dcgm_tensor_active_pct: float | None = None,
     dcgm_dram_active_pct: float | None = None,
@@ -144,6 +145,7 @@ def create_test_modelspec(
             quantization=None,
             enable_chunked_prefill=enable_chunked_prefill,
             kv_role=kv_role,
+            kv_connector=kv_connector,
             lmcache_enabled=lmcache_enabled,
         ),
         resources=ResourceInfo(
@@ -337,6 +339,39 @@ class TestFactExtraction:
             facts = data["objects"][0]["facts"]
             assert "vllm.kvRole" in facts
             assert facts["vllm.kvRole"]["value"] == "kv_both"
+
+    def test_extract_vllm_kv_connector(self) -> None:
+        """vllm.kvConnector -- the real KV-transfer mechanism (PyNcclConnector,
+        NixlConnector, LMCacheConnectorV1, etc.), parsed from the same
+        --kv-transfer-config JSON as kv_role but previously only consumed
+        internally for lmcache_enabled, never surfaced on its own."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(kv_role="kv_both", kv_connector="PyNcclConnector")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert "vllm.kvConnector" in facts
+            assert facts["vllm.kvConnector"]["value"] == "PyNcclConnector"
+
+    def test_vllm_kv_connector_absent_when_not_detected(self) -> None:
+        """No fact at all when kv_connector couldn't be confirmed -- same
+        absence-over-guessing rule as kv_role."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(kv_connector=None)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert "vllm.kvConnector" not in facts
 
     def test_vllm_kv_role_absent_when_not_detected(self) -> None:
         """No fact at all when kv_role couldn't be confirmed -- absence,

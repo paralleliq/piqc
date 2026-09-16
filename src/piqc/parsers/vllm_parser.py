@@ -125,6 +125,7 @@ class VLLMParser:
             pipeline_parallel_size=vllm_config.pipeline_parallel_size,
             enable_chunked_prefill=vllm_config.enable_chunked_prefill,
             kv_role=vllm_config.kv_role,
+            kv_connector=vllm_config.kv_connector,
             lmcache_enabled=vllm_config.lmcache_enabled,
         )
     

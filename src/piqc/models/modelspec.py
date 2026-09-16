@@ -141,6 +141,16 @@ class InferenceConfig(BaseModel):
         "kv_producer, kv_consumer, or kv_both. None means not confidently "
         "detected, not 'unified' -- see vllm_collector.derive_kv_transfer_fields.",
     )
+    kv_connector: Optional[str] = Field(
+        None,
+        alias="kvConnector",
+        description="The kv_connector class name from --kv-transfer-config's "
+        "own JSON (e.g. PyNcclConnector, NixlConnector, LMCacheConnectorV1) "
+        "-- the real KV-transfer mechanism a disaggregated pair uses, "
+        "already parsed by vllm_collector.derive_kv_transfer_fields for "
+        "lmcache_enabled below but never previously surfaced on its own. "
+        "None means not confidently detected, same as kv_role.",
+    )
     lmcache_enabled: Optional[bool] = Field(
         None,
         alias="lmcacheEnabled",
