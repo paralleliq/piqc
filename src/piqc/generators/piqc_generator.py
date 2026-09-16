@@ -542,6 +542,25 @@ class PIQCGenerator:
                 observed_at=self._timestamp,
             )
 
+        # vllm.kvConnector (optional extended) -- the real KV-transfer
+        # connector class name from the same --kv-transfer-config JSON as
+        # kv_role above (e.g. PyNcclConnector, NixlConnector,
+        # LMCacheConnectorV1). Was already parsed for lmcache_enabled's own
+        # detection but never surfaced as its own fact until now -- see
+        # vllm_collector.derive_kv_transfer_fields. Emitted independently of
+        # kv_role: a malformed/unrecognized kv_role value still leaves
+        # kv_connector parseable from the same JSON blob.
+        if inference.kv_connector is not None:
+            facts["vllm.kvConnector"] = FactValue(
+                value=inference.kv_connector,
+                source=Source(
+                    type=SourceType.K8S_API,
+                    method="container_args",
+                ),
+                data_confidence=Confidence.HIGH,
+                observed_at=self._timestamp,
+            )
+
         # lmcache.enabled (optional extended) -- True only on positive
         # evidence (LMCache KV connector or an LMCACHE_* env var); never
         # emitted as False, since absence of these two signals doesn't rule
