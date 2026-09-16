@@ -340,8 +340,27 @@ class VLLMRuntimeState(BaseModel):
         "LENGTH distribution across requests, not a throughput rate like "
         "prompt_tokens_per_sec above.",
     )
+    prompt_tokens_p50: Optional[float] = Field(
+        None,
+        alias="promptTokensP50",
+        description="p50 of the same vllm:request_prompt_tokens histogram as "
+        "prompt_tokens_p95 above.",
+    )
     generation_tokens_per_sec: Optional[float] = Field(
         None, alias="generationTokensPerSec", description="Generation token throughput"
+    )
+    generation_tokens_p50: Optional[float] = Field(
+        None,
+        alias="generationTokensP50",
+        description="p50 of the vllm:request_generation_tokens histogram -- "
+        "output LENGTH distribution across requests, not a throughput rate "
+        "like generation_tokens_per_sec above.",
+    )
+    generation_tokens_p95: Optional[float] = Field(
+        None,
+        alias="generationTokensP95",
+        description="p95 of the same vllm:request_generation_tokens histogram "
+        "as generation_tokens_p50 above.",
     )
     prompt_tokens_total: Optional[int] = Field(
         None, alias="promptTokensTotal", description="Total prompt tokens processed"

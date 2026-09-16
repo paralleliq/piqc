@@ -56,6 +56,9 @@ class VLLMThroughputMetrics:
     prompt_tokens_per_second: float = 0.0
     generation_tokens_per_second: float = 0.0
     prompt_tokens_p95: Optional[float] = None
+    prompt_tokens_p50: Optional[float] = None
+    generation_tokens_p50: Optional[float] = None
+    generation_tokens_p95: Optional[float] = None
 
 
 @dataclass
@@ -588,6 +591,21 @@ class VLLMAPIClient:
             prompt_tokens_percentiles = parsed.get('vllm_request_prompt_tokens_percentiles', {})
 
         metrics.throughput.prompt_tokens_p95 = prompt_tokens_percentiles.get('p95')
+        metrics.throughput.prompt_tokens_p50 = prompt_tokens_percentiles.get('p50')
+
+        # Generation LENGTH distribution (output tokens per request) -- same
+        # histogram-bucket percentile machinery as prompt length above,
+        # applied to vLLM's own per-request generation/output-size
+        # histogram instead. Previously never parsed at all (only the
+        # generation_tokens_total counter and derived per-second rate
+        # above existed) -- this is the model's outcome-prediction
+        # output_len_p50/output_len_p95 features' first real source.
+        generation_tokens_percentiles = parsed.get('vllm:request_generation_tokens_percentiles', {})
+        if not generation_tokens_percentiles:
+            generation_tokens_percentiles = parsed.get('vllm_request_generation_tokens_percentiles', {})
+
+        metrics.throughput.generation_tokens_p50 = generation_tokens_percentiles.get('p50')
+        metrics.throughput.generation_tokens_p95 = generation_tokens_percentiles.get('p95')
 
 
 # =============================================================================

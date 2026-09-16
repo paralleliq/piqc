@@ -241,6 +241,43 @@ vllm_request_prompt_tokens_count 100
         # p95 of 100 samples falls between the 256 and 512 buckets
         # (50 <= target_count=95 <= 95 boundary) -- interpolated, not exact.
         assert 256 <= metrics.throughput.prompt_tokens_p95 <= 512
+        # p50 of 100 samples (target_count=50) falls right at the 256
+        # bucket boundary -- same histogram, same percentile machinery,
+        # different target.
+        assert metrics.throughput.prompt_tokens_p50 is not None
+        assert 128 <= metrics.throughput.prompt_tokens_p50 <= 256
+
+    @patch.object(VLLMAPIClient, "get_health")
+    @patch.object(VLLMAPIClient, "get_models")
+    @patch.object(VLLMAPIClient, "get_metrics_raw")
+    def test_get_runtime_metrics_generation_tokens_percentiles(
+        self,
+        mock_metrics: Mock,
+        mock_models: Mock,
+        mock_health: Mock,
+    ) -> None:
+        """generation_tokens_p50/p95 are an output LENGTH distribution
+        (tokens per request), read from vLLM's own request_generation_tokens
+        histogram -- previously never parsed at all (only the cumulative
+        generation_tokens_total counter and a derived per-second rate
+        existed)."""
+        mock_health.return_value = True
+        mock_models.return_value = [{"id": "llama-7b"}]
+        mock_metrics.return_value = """
+vllm_request_generation_tokens_bucket{le="64"} 10
+vllm_request_generation_tokens_bucket{le="128"} 50
+vllm_request_generation_tokens_bucket{le="256"} 95
+vllm_request_generation_tokens_bucket{le="512"} 100
+vllm_request_generation_tokens_bucket{le="+Inf"} 100
+vllm_request_generation_tokens_count 100
+"""
+        client = VLLMAPIClient("http://localhost:8000")
+        metrics = client.get_runtime_metrics()
+
+        assert metrics.throughput.generation_tokens_p50 is not None
+        assert 64 <= metrics.throughput.generation_tokens_p50 <= 128
+        assert metrics.throughput.generation_tokens_p95 is not None
+        assert 128 <= metrics.throughput.generation_tokens_p95 <= 256
 
     @patch.object(VLLMAPIClient, "get_health")
     def test_get_runtime_metrics_unavailable(self, mock_health: Mock) -> None:
