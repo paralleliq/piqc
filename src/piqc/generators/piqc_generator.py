@@ -985,6 +985,51 @@ class PIQCGenerator:
                     units="tokens",
                 )
 
+            # obs.promptTokens.p50 -- same histogram as p95 above, first
+            # real source for the outcome-prediction model's prompt_len_p50
+            # feature (previously simulated-only, see docs/ROADMAP.md).
+            if vllm.prompt_tokens_p50 is not None:
+                facts["obs.promptTokens.p50"] = FactValue(
+                    value=round(vllm.prompt_tokens_p50, 1),
+                    source=Source(
+                        type=SourceType.HTTP_METRICS,
+                        method="GET /metrics",
+                    ),
+                    data_confidence=Confidence.MEDIUM,
+                    observed_at=vllm.collection_timestamp or self._timestamp,
+                    units="tokens",
+                )
+
+            # obs.generationTokens.p50/p95 (output LENGTH distribution across
+            # requests, not a throughput rate -- mirrors obs.promptTokens.*
+            # above, applied to vLLM's own generation/output-size histogram
+            # instead). First real source for the outcome-prediction model's
+            # output_len_p50/output_len_p95 features (previously
+            # simulated-only, see docs/ROADMAP.md).
+            if vllm.generation_tokens_p50 is not None:
+                facts["obs.generationTokens.p50"] = FactValue(
+                    value=round(vllm.generation_tokens_p50, 1),
+                    source=Source(
+                        type=SourceType.HTTP_METRICS,
+                        method="GET /metrics",
+                    ),
+                    data_confidence=Confidence.MEDIUM,
+                    observed_at=vllm.collection_timestamp or self._timestamp,
+                    units="tokens",
+                )
+
+            if vllm.generation_tokens_p95 is not None:
+                facts["obs.generationTokens.p95"] = FactValue(
+                    value=round(vllm.generation_tokens_p95, 1),
+                    source=Source(
+                        type=SourceType.HTTP_METRICS,
+                        method="GET /metrics",
+                    ),
+                    data_confidence=Confidence.MEDIUM,
+                    observed_at=vllm.collection_timestamp or self._timestamp,
+                    units="tokens",
+                )
+
             # obs.tps.avg (Average Tokens Per Second throughput)
             if vllm.generation_tokens_per_sec is not None:
                 facts["obs.tps.avg"] = FactValue(

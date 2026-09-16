@@ -67,6 +67,10 @@ def create_test_modelspec(
     dcgm_tensor_active_pct: float | None = None,
     dcgm_dram_active_pct: float | None = None,
     pod_spec_snapshot: dict | None = None,
+    prompt_tokens_p95: float | None = None,
+    prompt_tokens_p50: float | None = None,
+    generation_tokens_p50: float | None = None,
+    generation_tokens_p95: float | None = None,
 ) -> ModelSpec:
     """Create a test ModelSpec with configurable parameters."""
     runtime_state = None
@@ -80,6 +84,10 @@ def create_test_modelspec(
                 gpu_cache_usage_percent=45.5,
                 generation_tokens_per_sec=150.5,
                 prompt_tokens_per_sec=45.2,
+                prompt_tokens_p95=prompt_tokens_p95,
+                prompt_tokens_p50=prompt_tokens_p50,
+                generation_tokens_p50=generation_tokens_p50,
+                generation_tokens_p95=generation_tokens_p95,
                 api_available=True,
                 health_status="healthy",
                 collection_timestamp="2024-01-01T00:00:00Z",
@@ -645,6 +653,66 @@ class TestRuntimeMetrics:
             facts = data["objects"][0]["facts"]
             assert facts["obs.vllm.promptTokensPerSec"]["value"] == 45.2
             assert facts["obs.vllm.promptTokensPerSec"]["units"] == "tokens/s"
+
+    def test_extract_prompt_tokens_percentiles(self) -> None:
+        """obs.promptTokens.p50/p95 -- prompt LENGTH distribution, not a
+        throughput rate. p95 already existed; p50 is new, same histogram."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(
+            include_runtime=True, prompt_tokens_p95=850.0, prompt_tokens_p50=320.0
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert facts["obs.promptTokens.p95"]["value"] == 850.0
+            assert facts["obs.promptTokens.p95"]["units"] == "tokens"
+            assert facts["obs.promptTokens.p50"]["value"] == 320.0
+            assert facts["obs.promptTokens.p50"]["units"] == "tokens"
+
+    def test_extract_generation_tokens_percentiles(self) -> None:
+        """obs.generationTokens.p50/p95 -- output LENGTH distribution, the
+        outcome-prediction model's output_len_p50/output_len_p95 features'
+        first real source (previously fully simulated -- see
+        docs/ROADMAP.md). Never parsed at all before this."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(
+            include_runtime=True, generation_tokens_p50=180.0, generation_tokens_p95=600.0
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert facts["obs.generationTokens.p50"]["value"] == 180.0
+            assert facts["obs.generationTokens.p50"]["units"] == "tokens"
+            assert facts["obs.generationTokens.p95"]["value"] == 600.0
+            assert facts["obs.generationTokens.p95"]["units"] == "tokens"
+
+    def test_prompt_and_generation_percentiles_absent_when_not_detected(self) -> None:
+        """No facts at all when the histograms couldn't be read -- absence,
+        not a guessed default, same posture as every other optional fact
+        here."""
+        generator = PIQCGenerator()
+        modelspec = create_test_modelspec(include_runtime=True)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = generator.generate([modelspec], tmpdir)
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            facts = data["objects"][0]["facts"]
+            assert "obs.promptTokens.p50" not in facts
+            assert "obs.generationTokens.p50" not in facts
+            assert "obs.generationTokens.p95" not in facts
 
     def test_extract_vllm_requests_running(self) -> None:
         """Test obs.vllm.requestsRunning from runtime state."""
