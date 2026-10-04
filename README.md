@@ -1,7 +1,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/PIQC-v1.6.0-blue?style=for-the-badge&logo=kubernetes&logoColor=white" alt="PIQC Version"/>
   <img src="https://img.shields.io/badge/Python-3.11+-green?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>
-  <img src="https://img.shields.io/badge/License-BSL%201.1-orange?style=for-the-badge" alt="License"/>
+  <img src="https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge" alt="License"/>
   <img src="https://img.shields.io/badge/vLLM-Supported-purple?style=for-the-badge" alt="vLLM"/>
   <img src="https://img.shields.io/badge/Ray%20Serve-Supported-blue?style=for-the-badge" alt="Ray Serve"/>
   <img src="https://img.shields.io/github/stars/paralleliq/piqc?style=for-the-badge&logo=github&color=yellow" alt="GitHub Stars"/>
@@ -28,7 +28,7 @@
 
 ## What is piqc?
 
-piqc is a source-available inference fact collector for Kubernetes clusters. It collects model-aware facts — what is running, on what hardware, at what cost, with what waste — and surfaces them as a standardized facts bundle that feeds an optimization layer. It also prints a human-readable cost report so you can act on the results immediately without any external platform.
+piqc is an open-source inference fact collector for Kubernetes clusters. It collects model-aware facts — what is running, on what hardware, at what cost, with what waste — and surfaces them as a standardized facts bundle that feeds an optimization layer. It also prints a human-readable cost report so you can act on the results immediately without any external platform.
 
 It is the fastest way to answer: **how much GPU spend is my Kubernetes cluster wasting right now?**
 
@@ -93,7 +93,7 @@ Run `piqc scan` against your cluster and get an instant cost report:
   Free to get started: paralleliq.ai  ·  Questions? sam@paralleliq.ai
 ```
 
-**piqc is free and source-available** (Business Source License 1.1, converting to Apache 2.0 in 2028). The scan gives you the full picture — what is running, on what hardware, at what cost, and where the waste is. For continuous monitoring, alerting across your fleet, and automated remediation workflows, see [paralleliq.ai](https://paralleliq.ai).
+**piqc is free and open source** (Apache License 2.0). The scan gives you the full picture — what is running, on what hardware, at what cost, and where the waste is. For continuous monitoring, alerting across your fleet, and automated remediation workflows, see [paralleliq.ai](https://paralleliq.ai).
 
 ---
 

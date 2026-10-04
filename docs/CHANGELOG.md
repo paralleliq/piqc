@@ -8,6 +8,9 @@ This project adheres to [Semantic Versioning](https://semver.org/) and the [Keep
 
 ## [Unreleased]
 
+### Changed
+- **Relicensed under the Apache License 2.0.** piqc was under the Business Source License 1.1 (non-production use only, converting to Apache 2.0 in January 2028); it is now Apache 2.0 immediately, so it can be run on production clusters. `LICENSE`, `pyproject.toml` (`license` and classifier), `piqc.__license__`, the README, `GOVERNANCE.md` and `CONTRIBUTING.md` are updated to match. The previous `LICENSE` also named the wrong licensed work ("ModelSpec"). Takes effect for PyPI with the next release.
+
 ## [1.6.0] — 2026-09-14
 
 ### Added

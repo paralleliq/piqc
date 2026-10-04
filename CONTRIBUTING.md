@@ -218,7 +218,7 @@ git push origin --delete feature/name
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same Business Source License 1.1 that covers this project. See [LICENSE](LICENSE) for details.
+By contributing, you agree that your contributions will be licensed under the Apache License 2.0 that covers this project. See [LICENSE](LICENSE) for details.
 
 ---
 

@@ -7,4 +7,4 @@ Kubernetes — detects GPU waste, idle capacity, and tier misplacement.
 
 __version__ = "1.10.0"
 __author__ = "ParallelIQ Cloud"
-__license__ = "BUSL-1.1"
+__license__ = "Apache-2.0"
