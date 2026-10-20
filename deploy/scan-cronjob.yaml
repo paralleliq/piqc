@@ -9,7 +9,7 @@
 #      contact to) to get a cluster API key — POST /v1/clusters returns it
 #      once, so save it immediately.
 #   2. Create a Secret with that key:
-#        kubectl create secret generic piqc-api-key -n kube-system \
+#        kubectl create secret generic piqc-api-key -n paralleliq-scan \
 #          --from-literal=apiKey=<your-key>
 #   3. Edit --push-url and --cluster-id below to match your platform URL
 #      and this cluster's registered ID.
@@ -21,7 +21,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: piqc-scan-daily
-  namespace: kube-system
+  namespace: paralleliq-scan
   labels:
     app.kubernetes.io/name: piqc
     app.kubernetes.io/part-of: piqc

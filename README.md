@@ -111,10 +111,10 @@ kubectl apply -f https://raw.githubusercontent.com/paralleliq/piqc/main/deploy/r
 kubectl apply -f https://raw.githubusercontent.com/paralleliq/piqc/main/deploy/scan-job.yaml
 
 # Step 3 — View the output
-kubectl logs -f job/piqc-scan -n kube-system
+kubectl logs -f job/piqc-scan -n paralleliq-scan
 
 # Clean up when done
-kubectl delete job piqc-scan -n kube-system
+kubectl delete job piqc-scan -n paralleliq-scan
 ```
 
 > The job auto-deletes itself after 10 minutes (`ttlSecondsAfterFinished: 600`).

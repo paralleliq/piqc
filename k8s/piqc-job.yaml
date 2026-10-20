@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: piqc-scan
-  namespace: kube-system
+  namespace: paralleliq-scan
 spec:
   ttlSecondsAfterFinished: 300
   template:

@@ -1,8 +1,17 @@
+# The scan runs in a namespace of its own, not kube-system: OpenShift
+# administrators guard kube-system, and the scan needs nothing from it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: paralleliq-scan
+  labels:
+    app.kubernetes.io/part-of: piqc
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: piqc
-  namespace: kube-system
+  namespace: paralleliq-scan
   labels:
     app.kubernetes.io/name: piqc
     app.kubernetes.io/part-of: piqc
@@ -67,4 +76,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: piqc
-    namespace: kube-system
+    namespace: paralleliq-scan
