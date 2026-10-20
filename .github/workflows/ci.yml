@@ -42,13 +42,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # arm64 as well as amd64 (platform #354): NVIDIA's Grace GPU servers
+      # (GH200, GB200) and Apple Silicon are arm64.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push AMD64 image
+      - name: Build and push multi-arch image
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/paralleliq/piqc:latest
