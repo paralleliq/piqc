@@ -1,0 +1,8 @@
+# The scan runs in a namespace of its own, not kube-system (see deploy/rbac.yaml).
+# kubectl applies rbac/ in filename order, so this lands before serviceaccount.yaml.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: paralleliq-scan
+  labels:
+    app.kubernetes.io/part-of: piqc

@@ -124,6 +124,17 @@ kubectl delete job piqc-scan -n paralleliq-scan
 - **One command:** the [`helm/piqc`](helm/piqc) chart — installs the RBAC and the recurring scan together. `helm template` it first to see exactly what it applies before installing; see [`helm/piqc/README.md`](helm/piqc/README.md).
 - **Plain YAML, no Helm:** [`deploy/scan-cronjob.yaml`](deploy/scan-cronjob.yaml) — same scan, same RBAC as above, just recurring and authenticated with a cluster API key instead of one-shot and local-only.
 
+> **Upgrading from a version that ran in `kube-system`?** Re-applying `deploy/rbac.yaml` moves the `piqc` ServiceAccount's permissions to the `paralleliq-scan` namespace, so an old `piqc-scan-daily` CronJob in `kube-system` keeps running with no permissions. Recreate the API key secret in the new namespace, apply your edited copy of the new `scan-cronjob.yaml` (same `--push-url` and `--cluster-id` as before), then remove the old objects:
+>
+> ```bash
+> kubectl get secret piqc-api-key -n kube-system -o jsonpath='{.data.apiKey}' | base64 -d \
+>   | kubectl create secret generic piqc-api-key -n paralleliq-scan --from-file=apiKey=/dev/stdin
+> kubectl apply -f scan-cronjob.yaml
+> kubectl delete cronjob piqc-scan-daily -n kube-system
+> kubectl delete secret piqc-api-key -n kube-system
+> kubectl delete serviceaccount piqc -n kube-system
+> ```
+
 ---
 
 ### Option 2: Install from PyPI and run locally
