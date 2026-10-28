@@ -5,6 +5,6 @@ Open-source vLLM-native fact collector for AI/ML inference fleets on
 Kubernetes — detects GPU waste, idle capacity, and tier misplacement.
 """
 
-__version__ = "1.10.0"
+__version__ = "1.11.0"
 __author__ = "ParallelIQ Cloud"
 __license__ = "Apache-2.0"

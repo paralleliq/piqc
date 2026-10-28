@@ -8,8 +8,12 @@ This project adheres to [Semantic Versioning](https://semver.org/) and the [Keep
 
 ## [Unreleased]
 
+## [1.11.0] — 2026-10-28
+
 ### Changed
-- **Relicensed under the Apache License 2.0.** piqc was under the Business Source License 1.1 (non-production use only, converting to Apache 2.0 in January 2028); it is now Apache 2.0 immediately, so it can be run on production clusters. `LICENSE`, `pyproject.toml` (`license` and classifier), `piqc.__license__`, the README, `GOVERNANCE.md` and `CONTRIBUTING.md` are updated to match. The previous `LICENSE` also named the wrong licensed work ("ModelSpec"). Takes effect for PyPI with the next release.
+- **Relicensed under the Apache License 2.0.** piqc was under the Business Source License 1.1 (non-production use only, converting to Apache 2.0 in January 2028); it is now Apache 2.0 immediately, so it can be run on production clusters. `LICENSE`, `pyproject.toml` (`license` and classifier), `piqc.__license__`, the README, `GOVERNANCE.md` and `CONTRIBUTING.md` are updated to match. The previous `LICENSE` also named the wrong licensed work ("ModelSpec"). 1.11.0 is the first PyPI release under Apache 2.0; 1.10.0 and earlier remain under BUSL-1.1.
+- **The scan runs in its own namespace.** `rbac/` and `deploy/` create `paralleliq-scan` and run the scan Job and CronJob there instead of `kube-system`. A CronJob created in `kube-system` by an earlier version keeps running there with no permissions after `deploy/rbac.yaml` is re-applied, so recreate it in the new namespace (see the README's upgrade note).
+- **The image is published for `linux/arm64` as well as `linux/amd64`.**
 
 ## [1.6.0] — 2026-09-14
 
