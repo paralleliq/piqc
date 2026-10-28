@@ -166,7 +166,7 @@ docker run --rm \
   scan --format table
 ```
 
-Supports both `linux/amd64` and `linux/arm64`. `latest` follows the main branch; to pin a release, use its version as the tag, e.g. `ghcr.io/paralleliq/piqc:1.10.0` (from 1.10.0 on).
+Supports both `linux/amd64` and `linux/arm64`. `latest` follows the main branch; to pin a release, use its version as the tag, e.g. `ghcr.io/paralleliq/piqc:1.11.0` (from 1.11.0 on). A version tag is published once and never rebuilt.
 
 ---
 
